@@ -79,9 +79,6 @@ const CollatorType NoCollator = 0;
 typedef QString CollatorKeyType;
 typedef int CollatorType;
 const CollatorType NoCollator = 0;
-#  ifdef Q_OS_WINRT
-#    define USE_COMPARESTRINGEX
-#  endif
 
 #else // posix - ignores CollatorType collator, only handles system locale
 typedef QVector<wchar_t> CollatorKeyType;
@@ -95,11 +92,10 @@ public:
     QAtomicInt ref = 1;
     QLocale locale;
 #if defined(Q_OS_WIN) && !QT_CONFIG(icu)
-#ifdef USE_COMPARESTRINGEX
     QString localeName;
-#else
     LCID localeID;
-#endif
+    int (*pCompare)(const QCollatorPrivate *p, const WCHAR *d1, int s1, const WCHAR *d2, int s2);
+    int (*pMapString)(const QCollatorPrivate *p, const WCHAR *in, int inSize, WCHAR *out, int outSize);
 #endif
     Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive;
     bool numericMode = false;
@@ -112,7 +108,8 @@ public:
     ~QCollatorPrivate() { cleanup(); }
     bool isC() { return locale.language() == QLocale::C; }
 
-    void clear() {
+    void clear()
+    {
         cleanup();
         collator = NoCollator;
     }

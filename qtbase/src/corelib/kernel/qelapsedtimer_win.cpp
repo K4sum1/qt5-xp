@@ -41,6 +41,10 @@
 #include "qdeadlinetimer.h"
 #include "qdeadlinetimer_p.h"
 #include <qt_windows.h>
+#include <private/qsystemlibrary_p.h>
+
+typedef ULONGLONG (WINAPI *PtrGetTickCount64)(void);
+static PtrGetTickCount64 ptrGetTickCount64 = 0;
 
 QT_BEGIN_NAMESPACE
 
@@ -52,6 +56,14 @@ static void resolveCounterFrequency()
     static bool done = false;
     if (done)
         return;
+
+    // try to get GetTickCount64 from the system
+    QSystemLibrary kernel32(QLatin1String("kernel32"));
+    if (!kernel32.load())
+        return;
+
+    // does this function exist on WinCE, or will ever exist?
+    ptrGetTickCount64 = (PtrGetTickCount64)kernel32.resolve("GetTickCount64");
 
     // Retrieve the number of high-resolution performance counter ticks per second
     LARGE_INTEGER frequency;
@@ -93,7 +105,16 @@ static quint64 getTickCount()
         return counter.QuadPart;
     }
 
-    return GetTickCount64();
+    if (ptrGetTickCount64)
+        return ptrGetTickCount64();
+
+    static quint32 highdword = 0;
+    static quint32 lastval = 0;
+    quint32 val = GetTickCount();
+    if (val < lastval)
+        ++highdword;
+    lastval = val;
+    return val | (quint64(highdword) << 32);
 }
 
 quint64 qt_msectime()

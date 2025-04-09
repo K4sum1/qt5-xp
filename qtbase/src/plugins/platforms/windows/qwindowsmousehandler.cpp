@@ -636,7 +636,7 @@ bool QWindowsMouseHandler::translateTouchEvent(QWindow *window, HWND,
     touchPoints.reserve(winTouchPointCount);
     Qt::TouchPointStates allStates;
 
-    GetTouchInputInfo(reinterpret_cast<HTOUCHINPUT>(msg.lParam),
+    QWindowsContext::user32dll.getTouchInputInfo(reinterpret_cast<HTOUCHINPUT>(msg.lParam),
                       UINT(msg.wParam), winTouchInputs.data(), sizeof(TOUCHINPUT));
     for (int i = 0; i < winTouchPointCount; ++i) {
         const TOUCHINPUT &winTouchInput = winTouchInputs[i];
@@ -678,7 +678,7 @@ bool QWindowsMouseHandler::translateTouchEvent(QWindow *window, HWND,
         touchPoints.append(touchPoint);
     }
 
-    CloseTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(msg.lParam));
+    QWindowsContext::user32dll.closeTouchInputHandle(reinterpret_cast<HTOUCHINPUT>(msg.lParam));
 
     // all touch points released, forget the ids we've seen, they may not be reused
     if (allStates == Qt::TouchPointReleased)

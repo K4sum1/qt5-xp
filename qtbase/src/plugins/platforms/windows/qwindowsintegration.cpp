@@ -78,6 +78,7 @@
 
 #include <QtCore/qdebug.h>
 #include <QtCore/qvariant.h>
+#include <QtCore/qoperatingsystemversion.h>
 
 #include <limits.h>
 
@@ -226,6 +227,9 @@ static inline unsigned parseOptions(const QStringList &paramList,
             qWarning() << "Unknown option" << param;
         }
     }
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion::WindowsVista &&
+        !(options & QWindowsIntegration::NoNativeDialogs))
+        options |= QWindowsIntegration::XpNativeDialogs;
     return options;
 }
 

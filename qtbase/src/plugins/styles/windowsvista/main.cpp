@@ -40,6 +40,7 @@
 #include <QtWidgets/private/qtwidgetsglobal_p.h>
 #include <QtWidgets/qstyleplugin.h>
 #include "qwindowsvistastyle_p.h"
+#include "qwindowsxpstyle_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -55,6 +56,9 @@ QStyle *QWindowsVistaStylePlugin::create(const QString &key)
 {
     if (key.compare(QLatin1String("windowsvista"), Qt::CaseInsensitive) == 0)
         return new QWindowsVistaStyle();
+
+    if (key.compare(QLatin1String("windowsxp"), Qt::CaseInsensitive) == 0)
+        return new QWindowsXPStyle();
 
     return nullptr;
 }

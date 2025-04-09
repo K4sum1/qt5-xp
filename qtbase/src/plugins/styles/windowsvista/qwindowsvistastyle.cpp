@@ -83,7 +83,9 @@ static const int windowsRightBorder      = 15; // right border on windows
 */
 bool QWindowsVistaStylePrivate::useVista()
 {
-    return QWindowsVistaStylePrivate::useXP();
+    return QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista
+           && QWindowsVistaStylePrivate::useXP()
+           && QWindowsVistaStylePrivate::pGetThemeTransitionDuration != nullptr;
 }
 
 /* \internal
@@ -387,7 +389,7 @@ void QWindowsVistaStyle::drawPrimitive(PrimitiveElement element, const QStyleOpt
 
                     // Retrieve the transition time between the states from the system.
                     if (theme
-                        && SUCCEEDED(GetThemeTransitionDuration(theme, partId, fromState, toState,
+                        && SUCCEEDED(QWindowsXPStylePrivate::pGetThemeTransitionDuration(theme, partId, fromState, toState,
                                                                 TMT_TRANSITIONDURATIONS, &duration))) {
                         t->setDuration(int(duration));
                     }
@@ -895,7 +897,7 @@ void QWindowsVistaStyle::drawControl(ControlElement element, const QStyleOption 
 
                 int fromState = buttonStateId(oldState, BP_PUSHBUTTON);
                 int toState = buttonStateId(option->state, BP_PUSHBUTTON);
-                if (GetThemeTransitionDuration(theme, BP_PUSHBUTTON, fromState, toState, TMT_TRANSITIONDURATIONS, &duration) == S_OK)
+                if (QWindowsXPStylePrivate::pGetThemeTransitionDuration(theme, BP_PUSHBUTTON, fromState, toState, TMT_TRANSITIONDURATIONS, &duration) == S_OK)
                     t->setDuration(int(duration));
                 else
                     t->setDuration(0);

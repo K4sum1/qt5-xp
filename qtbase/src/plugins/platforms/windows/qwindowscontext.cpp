@@ -77,7 +77,6 @@
 #include <QtCore/qstringlist.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qoperatingsystemversion.h>
-#include <QtCore/qsysinfo.h>
 #include <QtCore/qscopedpointer.h>
 #include <QtCore/quuid.h>
 #include <QtCore/private/qsystemlibrary_p.h>
@@ -190,10 +189,21 @@ static bool enableNonClientDpiScaling(HWND hwnd)
 void QWindowsUser32DLL::init()
 {
     QSystemLibrary library(QStringLiteral("user32"));
+    setLayeredWindowAttributes = (SetLayeredWindowAttributes)(library.resolve("SetLayeredWindowAttributes"));
+    updateLayeredWindow = (UpdateLayeredWindow)(library.resolve("UpdateLayeredWindow"));
+    if (Q_UNLIKELY(!setLayeredWindowAttributes || !updateLayeredWindow))
+        qFatal("This version of Windows is not supported (User32.dll is missing the symbols 'SetLayeredWindowAttributes', 'UpdateLayeredWindow').");
+    
+    updateLayeredWindowIndirect = (UpdateLayeredWindowIndirect)(library.resolve("UpdateLayeredWindowIndirect"));
+    isHungAppWindow = (IsHungAppWindow)library.resolve("IsHungAppWindow");
     setProcessDPIAware = (SetProcessDPIAware)library.resolve("SetProcessDPIAware");
 
-    addClipboardFormatListener = (AddClipboardFormatListener)library.resolve("AddClipboardFormatListener");
-    removeClipboardFormatListener = (RemoveClipboardFormatListener)library.resolve("RemoveClipboardFormatListener");
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista) {
+        addClipboardFormatListener = (AddClipboardFormatListener)library.resolve("AddClipboardFormatListener");
+        removeClipboardFormatListener = (RemoveClipboardFormatListener)library.resolve("RemoveClipboardFormatListener");
+        registerPowerSettingNotification = (RegisterPowerSettingNotification)library.resolve("RegisterPowerSettingNotification");
+        unregisterPowerSettingNotification = (UnregisterPowerSettingNotification)library.resolve("UnregisterPowerSettingNotification");
+    }
 
     getDisplayAutoRotationPreferences = (GetDisplayAutoRotationPreferences)library.resolve("GetDisplayAutoRotationPreferences");
     setDisplayAutoRotationPreferences = (SetDisplayAutoRotationPreferences)library.resolve("SetDisplayAutoRotationPreferences");
@@ -221,11 +231,34 @@ void QWindowsUser32DLL::init()
     }
 }
 
+bool QWindowsUser32DLL::initTouch()
+{
+    if (!isTouchWindow && QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows7) {
+        QSystemLibrary library(QStringLiteral("user32"));
+        isTouchWindow = (IsTouchWindow)(library.resolve("IsTouchWindow"));
+        registerTouchWindow = (RegisterTouchWindow)(library.resolve("RegisterTouchWindow"));
+        unregisterTouchWindow = (UnregisterTouchWindow)(library.resolve("UnregisterTouchWindow"));
+        getTouchInputInfo = (GetTouchInputInfo)(library.resolve("GetTouchInputInfo"));
+        closeTouchInputHandle = (CloseTouchInputHandle)(library.resolve("CloseTouchInputHandle"));
+    }
+    return isTouchWindow && registerTouchWindow && unregisterTouchWindow && getTouchInputInfo && closeTouchInputHandle;
+}
+
 bool QWindowsUser32DLL::supportsPointerApi()
 {
     return enableMouseInPointer && getPointerType && getPointerInfo && getPointerDeviceRects
             && getPointerTouchInfo && getPointerFrameTouchInfo && getPointerFrameTouchInfoHistory
             && getPointerPenInfo && getPointerPenInfoHistory && skipPointerFrameMessages;
+}
+
+void QWindowsShell32DLL::init()
+{
+    QSystemLibrary library(QStringLiteral("shell32"));
+    sHCreateItemFromParsingName = (SHCreateItemFromParsingName)(library.resolve("SHCreateItemFromParsingName"));
+    sHGetKnownFolderIDList = (SHGetKnownFolderIDList)(library.resolve("SHGetKnownFolderIDList"));
+    sHGetStockIconInfo = (SHGetStockIconInfo)library.resolve("SHGetStockIconInfo");
+    sHGetImageList = (SHGetImageList)library.resolve("SHGetImageList");
+    sHCreateItemFromIDList = (SHCreateItemFromIDList)library.resolve("SHCreateItemFromIDList");
 }
 
 void QWindowsShcoreDLL::init()
@@ -239,6 +272,7 @@ void QWindowsShcoreDLL::init()
 }
 
 QWindowsUser32DLL QWindowsContext::user32dll;
+QWindowsShell32DLL QWindowsContext::shell32dll;
 QWindowsShcoreDLL QWindowsContext::shcoredll;
 
 QWindowsContext *QWindowsContext::m_instance = nullptr;
@@ -283,9 +317,10 @@ QWindowsContextPrivate::QWindowsContextPrivate()
     : m_oleInitializeResult(OleInitialize(nullptr))
 {
     QWindowsContext::user32dll.init();
+    QWindowsContext::shell32dll.init();
     QWindowsContext::shcoredll.init();
 
-    if (m_pointerHandler.touchDevice() || m_mouseHandler.touchDevice())
+    if ((m_pointerHandler.touchDevice() || m_mouseHandler.touchDevice()) && QWindowsContext::user32dll.initTouch())
         m_systemInfo |= QWindowsContext::SI_SupportsTouch;
     m_displayContext = GetDC(nullptr);
     m_defaultDPI = GetDeviceCaps(m_displayContext, LOGPIXELSY);
@@ -319,8 +354,8 @@ QWindowsContext::~QWindowsContext()
     d->m_tabletSupport.reset(); // Destroy internal window before unregistering classes.
 #endif
 
-    if (d->m_powerNotification)
-        UnregisterPowerSettingNotification(d->m_powerNotification);
+    if (d->m_powerNotification && user32dll.unregisterPowerSettingNotification)
+        user32dll.unregisterPowerSettingNotification(d->m_powerNotification);
 
     if (d->m_powerDummyWindow)
         DestroyWindow(d->m_powerDummyWindow);
@@ -425,6 +460,9 @@ extern "C" LRESULT QT_WIN_CALLBACK qWindowsPowerWindowProc(HWND hwnd, UINT messa
 
 bool QWindowsContext::initPowerNotificationHandler()
 {
+    if (!user32dll.registerPowerSettingNotification)
+        return false;
+    
     if (d->m_powerNotification)
         return false;
 
@@ -432,7 +470,7 @@ bool QWindowsContext::initPowerNotificationHandler()
     if (!d->m_powerDummyWindow)
         return false;
 
-    d->m_powerNotification = RegisterPowerSettingNotification(d->m_powerDummyWindow, &GUID_MONITOR_POWER_ON, DEVICE_NOTIFY_WINDOW_HANDLE);
+    d->m_powerNotification = user32dll.registerPowerSettingNotification(d->m_powerDummyWindow, &GUID_MONITOR_POWER_ON, DEVICE_NOTIFY_WINDOW_HANDLE);
     if (!d->m_powerNotification) {
         DestroyWindow(d->m_powerDummyWindow);
         d->m_powerDummyWindow = nullptr;
@@ -1041,7 +1079,9 @@ bool QWindowsContext::systemParametersInfoForWindow(unsigned action, unsigned pa
 bool QWindowsContext::nonClientMetrics(NONCLIENTMETRICS *ncm, unsigned dpi)
 {
     memset(ncm, 0, sizeof(NONCLIENTMETRICS));
-    ncm->cbSize = sizeof(NONCLIENTMETRICS);
+    ncm->cbSize =
+        QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista ?
+        sizeof(NONCLIENTMETRICS) : FIELD_OFFSET(NONCLIENTMETRICS, lfMessageFont) + sizeof(LOGFONT);
     return systemParametersInfo(SPI_GETNONCLIENTMETRICS, ncm->cbSize, ncm, dpi);
 }
 

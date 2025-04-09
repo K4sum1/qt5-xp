@@ -94,6 +94,8 @@ private:
     mutable QPointer<QWindowsPopupMenu> m_menu;
     bool m_ignoreNextMouseRelease = false;
     bool m_visible = false;
+    uint notifyIconSize;
+    int version;
 };
 
 #ifndef QT_NO_DEBUG_STREAM

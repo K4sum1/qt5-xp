@@ -43,6 +43,8 @@
 
 QT_BEGIN_NAMESPACE
 
+extern bool qt_cancelIo(HANDLE handle, OVERLAPPED *overlapped);     // from qwindowspipereader.cpp
+
 QWindowsPipeWriter::Overlapped::Overlapped(QWindowsPipeWriter *pipeWriter)
     : pipeWriter(pipeWriter)
 {
@@ -212,10 +214,10 @@ void QWindowsPipeWriter::stop()
     bytesWrittenPending = false;
     pendingBytesWrittenValue = 0;
     if (writeSequenceStarted) {
-        if (!CancelIoEx(handle, &overlapped)) {
+        if (!qt_cancelIo(handle, &overlapped)) {
             const DWORD dwError = GetLastError();
             if (dwError != ERROR_NOT_FOUND) {
-                qErrnoWarning(dwError, "QWindowsPipeWriter: CancelIoEx on handle %p failed.",
+                qErrnoWarning(dwError, "QWindowsPipeWriter: qt_cancelIo on handle %p failed.",
                               handle);
             }
         }

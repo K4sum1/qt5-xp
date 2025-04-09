@@ -362,6 +362,20 @@ bool QOperatingSystemVersion::isAnyOfType(std::initializer_list<OSType> types) c
 }
 
 /*!
+    \variable QOperatingSystemVersion::WindowsXP
+    \brief a version corresponding to Windows XP (version 5.1).
+ */
+const QOperatingSystemVersion QOperatingSystemVersion::WindowsXP =
+    QOperatingSystemVersion(QOperatingSystemVersion::Windows, 5, 1);
+
+/*!
+    \variable QOperatingSystemVersion::WindowsVista
+    \brief a version corresponding to Windows Vista (version 6.0).
+ */
+const QOperatingSystemVersion QOperatingSystemVersion::WindowsVista =
+    QOperatingSystemVersion(QOperatingSystemVersion::Windows, 6, 0);
+
+/*!
     \variable QOperatingSystemVersion::Windows7
     \brief a version corresponding to Windows 7 (version 6.1).
     \since 5.9

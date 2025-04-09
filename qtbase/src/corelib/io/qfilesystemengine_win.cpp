@@ -156,6 +156,11 @@ typedef struct _REPARSE_DATA_BUFFER {
 #  define QT_FEATURE_fslibs 1
 #endif // Q_OS_WINRT
 
+#ifndef Q_OS_WINRT
+typedef HRESULT (WINAPI *PtrSHCreateItemFromParsingName)(PCWSTR, IBindCtx *, const GUID&, void **);
+static PtrSHCreateItemFromParsingName ptrSHCreateItemFromParsingName = nullptr;
+#endif
+
 #if QT_CONFIG(fslibs)
 #include <aclapi.h>
 #include <userenv.h>
@@ -673,6 +678,9 @@ typedef struct _FILE_ID_INFO {
 
 #endif // if defined (Q_CC_MINGW) && WINVER < 0x0602
 
+// FILE_INFO_BY_HANDLE_CLASS has been extended by FileIdInfo = 18 as of VS2012.
+typedef enum { Q_FileIdInfo = 18 } Q_FILE_INFO_BY_HANDLE_CLASS;
+
 // File ID for Windows up to version 7 and FAT32 drives
 static inline QByteArray fileId(HANDLE handle)
 {
@@ -697,17 +705,26 @@ static inline QByteArray fileId(HANDLE handle)
 QByteArray fileIdWin8(HANDLE handle)
 {
 #if !defined(QT_BOOTSTRAPPED) && !defined(QT_BUILD_QMAKE)
+    typedef BOOL (WINAPI* GetFileInformationByHandleExType)(HANDLE, Q_FILE_INFO_BY_HANDLE_CLASS, void *, DWORD);
+
+    // Dynamically resolve  GetFileInformationByHandleEx (Vista onwards).
+    static GetFileInformationByHandleExType getFileInformationByHandleEx = 0;
+    if (!getFileInformationByHandleEx) {
+        QSystemLibrary library(QLatin1String("kernel32"));
+        getFileInformationByHandleEx = (GetFileInformationByHandleExType)library.resolve("GetFileInformationByHandleEx");
+    }
     QByteArray result;
-    FILE_ID_INFO infoEx;
-    if (GetFileInformationByHandleEx(handle,
-                                     static_cast<FILE_INFO_BY_HANDLE_CLASS>(18), // FileIdInfo in Windows 8
-                                     &infoEx, sizeof(FILE_ID_INFO))) {
-        result = QByteArray::number(infoEx.VolumeSerialNumber, 16);
-        result += ':';
-        // Note: MinGW-64's definition of FILE_ID_128 differs from the MSVC one.
-        result += QByteArray(reinterpret_cast<const char *>(&infoEx.FileId), int(sizeof(infoEx.FileId))).toHex();
-    } else {
-        result = fileId(handle); // GetFileInformationByHandleEx() is observed to fail for FAT32, QTBUG-74759
+    if (getFileInformationByHandleEx) {
+        FILE_ID_INFO infoEx;
+        if (getFileInformationByHandleEx(handle, Q_FileIdInfo,
+                                         &infoEx, sizeof(FILE_ID_INFO))) {
+            result = QByteArray::number(infoEx.VolumeSerialNumber, 16);
+            result += ':';
+            // Note: MinGW-64's definition of FILE_ID_128 differs from the MSVC one.
+            result += QByteArray((char *)&infoEx.FileId, sizeof(infoEx.FileId)).toHex();
+        }
+        else
+            result = fileId(handle); // GetFileInformationByHandleEx() is observed to fail for FAT32, QTBUG-74759
     }
     return result;
 #else // !QT_BOOTSTRAPPED && !QT_BUILD_QMAKE
@@ -1555,6 +1572,13 @@ bool QFileSystemEngine::moveFileToTrash(const QFileSystemEntry &source,
     */
     if (QOperatingSystemVersion::current() > QOperatingSystemVersion::Windows7) {
 #  if defined(__IFileOperation_INTERFACE_DEFINED__)
+        if (!ptrSHCreateItemFromParsingName) {
+            ptrSHCreateItemFromParsingName = reinterpret_cast<PtrSHCreateItemFromParsingName>(
+                QSystemLibrary::resolve(QLatin1String("shell32"), "ShellExecuteExW"));
+            if (!ptrSHCreateItemFromParsingName)
+                return false;
+        }
+
         CoInitialize(NULL);
         IFileOperation *pfo = nullptr;
         IShellItem *deleteItem = nullptr;
@@ -1578,8 +1602,7 @@ bool QFileSystemEngine::moveFileToTrash(const QFileSystemEntry &source,
             return false;
         pfo->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION
                             | FOF_SILENT | FOF_NOERRORUI);
-        hres = SHCreateItemFromParsingName(reinterpret_cast<const wchar_t*>(sourcePath.utf16()),
-                                        nullptr, IID_PPV_ARGS(&deleteItem));
+        hres = ptrSHCreateItemFromParsingName(reinterpret_cast<const wchar_t*>(sourcePath.utf16()), nullptr, IID_PPV_ARGS(&deleteItem));
         if (!deleteItem)
             return false;
         sink = new FileOperationProgressSink;

@@ -42,6 +42,7 @@
 #if QT_CONFIG(style_windowsvista)
 
 #include "qwizard_win_p.h"
+#include <private/qsystemlibrary_p.h>
 #include <private/qapplication_p.h>
 #include <qpa/qplatformnativeinterface.h>
 #include "qwizard.h"
@@ -66,8 +67,40 @@ Q_DECLARE_METATYPE(QMargins)
 
 QT_BEGIN_NAMESPACE
 
+typedef BOOL (WINAPI *PtrDwmDefWindowProc)(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, LRESULT *plResult);
+typedef HRESULT (WINAPI *PtrDwmIsCompositionEnabled)(BOOL* pfEnabled);
+typedef HRESULT (WINAPI *PtrDwmExtendFrameIntoClientArea)(HWND hWnd, const MARGINS* pMarInset);
+typedef HRESULT (WINAPI *PtrSetWindowThemeAttribute)(HWND hwnd, enum WINDOWTHEMEATTRIBUTETYPE eAttribute, PVOID pvAttribute, DWORD cbAttribute);
+
+static PtrDwmDefWindowProc pDwmDefWindowProc = nullptr;
+static PtrDwmIsCompositionEnabled pDwmIsCompositionEnabled = nullptr;
+static PtrDwmExtendFrameIntoClientArea pDwmExtendFrameIntoClientArea = nullptr;
+static PtrSetWindowThemeAttribute pSetWindowThemeAttribute = nullptr;
+
+//Theme related
+typedef bool (WINAPI *PtrIsAppThemed)();
+typedef bool (WINAPI *PtrIsThemeActive)();
+typedef HANDLE (WINAPI *PtrOpenThemeData)(HWND hwnd, LPCWSTR pszClassList);
+typedef HRESULT (WINAPI *PtrCloseThemeData)(HANDLE hTheme);
+typedef HRESULT (WINAPI *PtrGetThemeSysFont)(HANDLE hTheme, int iFontId, LOGFONTW *plf);
+typedef HRESULT (WINAPI *PtrDrawThemeTextEx)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, LPCWSTR pszText, int cchText, DWORD dwTextFlags, LPRECT pRect, const DTTOPTS *pOptions);
+typedef HRESULT (WINAPI *PtrDrawThemeBackground)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pRect, OPTIONAL const RECT *pClipRect);
+typedef HRESULT (WINAPI *PtrGetThemePartSize)(HANDLE hTheme, HDC hdc, int iPartId, int iStateId, OPTIONAL RECT *prc, enum THEMESIZE eSize, OUT SIZE *psz);
+typedef HRESULT (WINAPI *PtrGetThemeColor)(HANDLE hTheme, int iPartId, int iStateId, int iPropId, OUT COLORREF *pColor);
+
+static PtrIsAppThemed pIsAppThemed = 0;
+static PtrIsThemeActive pIsThemeActive = 0;
+static PtrOpenThemeData pOpenThemeData = 0;
+static PtrCloseThemeData pCloseThemeData = 0;
+static PtrGetThemeSysFont pGetThemeSysFont = 0;
+static PtrDrawThemeTextEx pDrawThemeTextEx = 0;
+static PtrDrawThemeBackground pDrawThemeBackground = 0;
+static PtrGetThemePartSize pGetThemePartSize = 0;
+static PtrGetThemeColor pGetThemeColor = 0;
+
 int QVistaHelper::instanceCount = 0;
 int QVistaHelper::m_devicePixelRatio = 1;
+bool QVistaHelper::isVista = false;
 QVistaHelper::VistaState QVistaHelper::cachedVistaState = QVistaHelper::Dirty;
 
 /******************************************************************************
@@ -110,7 +143,7 @@ void QVistaBackButton::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
     QRect r = rect();
-    const HANDLE theme = OpenThemeData(0, L"Navigation");
+    const HANDLE theme = pOpenThemeData(0, L"Navigation");
     //RECT rect;
     QPoint origin;
     const HDC hdc = QVistaHelper::backingStoreDC(parentWidget(), &origin);
@@ -135,9 +168,9 @@ void QVistaBackButton::paintEvent(QPaintEvent *)
     else if (underMouse())
         state = NAV_BB_HOT;
 
-    DrawThemeBackground(theme, hdc,
-                        layoutDirection() == Qt::LeftToRight ? NAV_BACKBUTTON : NAV_FORWARDBUTTON,
-                        state, &clipRect, &clipRect);
+    pDrawThemeBackground(theme, hdc,
+                         layoutDirection() == Qt::LeftToRight ? NAV_BACKBUTTON : NAV_FORWARDBUTTON,
+                         state, &clipRect, &clipRect);
 }
 
 /******************************************************************************
@@ -151,12 +184,18 @@ QVistaHelper::QVistaHelper(QWizard *wizard)
     , backButton_(0)
 {
     QVistaHelper::m_devicePixelRatio = wizard->devicePixelRatio();
+    isVista = resolveSymbols();
     if (instanceCount++ == 0)
         cachedVistaState = Dirty;
-    backButton_ = new QVistaBackButton(wizard);
-    backButton_->hide();
+    if (isVista) {
+        backButton_ = new QVistaBackButton(wizard);
+        backButton_->hide();
+    }
 
+    // Handle diff between Windows 7 and Vista
     iconSpacing = QStyleHelper::dpiScaled(7, wizard);
+    textSpacing = QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows7?
+                  iconSpacing : QStyleHelper::dpiScaled(20, wizard);
 }
 
 QVistaHelper::~QVistaHelper()
@@ -186,13 +225,20 @@ void QVistaHelper::updateCustomMargins(bool vistaMargins)
 
 bool QVistaHelper::isCompositionEnabled()
 {
-    BOOL bEnabled;
-    return SUCCEEDED(DwmIsCompositionEnabled(&bEnabled)) && bEnabled;
+    bool value = isVista;
+    if (isVista) {
+        HRESULT hr;
+        BOOL bEnabled;
+
+        hr = pDwmIsCompositionEnabled(&bEnabled);
+        value = (SUCCEEDED(hr) && bEnabled);
+    }
+    return value;
 }
 
 bool QVistaHelper::isThemeActive()
 {
-    return IsThemeActive();
+    return isVista && pIsThemeActive();
 }
 
 QVistaHelper::VistaState QVistaHelper::vistaState()
@@ -212,9 +258,9 @@ void QVistaHelper::disconnectBackButton()
 QColor QVistaHelper::basicWindowFrameColor()
 {
     DWORD rgb;
-    const HANDLE hTheme = OpenThemeData(GetDesktopWindow(), L"WINDOW");
-    GetThemeColor(hTheme, WP_CAPTION, CS_ACTIVE,
-                  wizard->isActiveWindow() ? TMT_FILLCOLORHINT : TMT_BORDERCOLORHINT, &rgb);
+    const HANDLE hTheme = pOpenThemeData(GetDesktopWindow(), L"WINDOW");
+    pGetThemeColor(hTheme, WP_CAPTION, CS_ACTIVE,
+                   wizard->isActiveWindow() ? TMT_FILLCOLORHINT : TMT_BORDERCOLORHINT, &rgb);
     BYTE r = GetRValue(rgb);
     BYTE g = GetGValue(rgb);
     BYTE b = GetBValue(rgb);
@@ -231,7 +277,7 @@ bool QVistaHelper::setDWMTitleBar(TitleBarChangeType type)
         else
             mar.cyTopHeight = (titleBarSize() + topOffset(wizard)) * QVistaHelper::m_devicePixelRatio;
         if (const HWND wizardHandle = wizardHWND())
-            if (SUCCEEDED(DwmExtendFrameIntoClientArea(wizardHandle, &mar)))
+            if (SUCCEEDED(pDwmExtendFrameIntoClientArea(wizardHandle, &mar)))
                 value = true;
     }
     return value;
@@ -243,7 +289,7 @@ static LOGFONT getCaptionLogFont(HANDLE hTheme)
 {
     LOGFONT result = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, { 0 } };
 
-    if (!hTheme || FAILED(GetThemeSysFont(hTheme, TMT_CAPTIONFONT, &result))) {
+    if (!hTheme || FAILED(pGetThemeSysFont(hTheme, TMT_CAPTIONFONT, &result))) {
         NONCLIENTMETRICS ncm;
         ncm.cbSize = sizeof(NONCLIENTMETRICS);
         SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, false);
@@ -254,7 +300,9 @@ static LOGFONT getCaptionLogFont(HANDLE hTheme)
 
 static bool getCaptionQFont(int dpi, QFont *result)
 {
-    const HANDLE hTheme = OpenThemeData(GetDesktopWindow(), L"WINDOW");
+    if (!pOpenThemeData)
+        return false;
+    const HANDLE hTheme = pOpenThemeData(GetDesktopWindow(), L"WINDOW");
     if (!hTheme)
         return false;
     // Call into QWindowsNativeInterface to convert the LOGFONT into a QFont.
@@ -329,14 +377,16 @@ void QVistaHelper::drawTitleBar(QPainter *painter)
 
 void QVistaHelper::setTitleBarIconAndCaptionVisible(bool visible)
 {
-    WTA_OPTIONS opt;
-    opt.dwFlags = WTNCA_NODRAWICON | WTNCA_NODRAWCAPTION;
-    if (visible)
-        opt.dwMask = 0;
-    else
-        opt.dwMask = WTNCA_NODRAWICON | WTNCA_NODRAWCAPTION;
-    if (const HWND handle = wizardHWND())
-        SetWindowThemeAttribute(handle, WTA_NONCLIENT, &opt, sizeof(WTA_OPTIONS));
+    if (isVista) {
+        WTA_OPTIONS opt;
+        opt.dwFlags = WTNCA_NODRAWICON | WTNCA_NODRAWCAPTION;
+        if (visible)
+            opt.dwMask = 0;
+        else
+            opt.dwMask = WTNCA_NODRAWICON | WTNCA_NODRAWCAPTION;
+        if (const HWND handle = wizardHWND())
+            pSetWindowThemeAttribute(handle, WTA_NONCLIENT, &opt, sizeof(WTA_OPTIONS));
+    }
 }
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -349,7 +399,7 @@ bool QVistaHelper::winEvent(MSG* msg, long* result)
     case WM_NCHITTEST: {
         LRESULT lResult;
         // Perform hit testing using DWM
-        if (DwmDefWindowProc(msg->hwnd, msg->message, msg->wParam, msg->lParam, &lResult)) {
+        if (pDwmDefWindowProc(msg->hwnd, msg->message, msg->wParam, msg->lParam, &lResult)) {
             // DWM returned a hit, no further processing necessary
             *result = lResult;
         } else {
@@ -368,7 +418,7 @@ bool QVistaHelper::winEvent(MSG* msg, long* result)
     default:
         LRESULT lResult;
         // Pass to DWM to handle
-        if (DwmDefWindowProc(msg->hwnd, msg->message, msg->wParam, msg->lParam, &lResult))
+        if (pDwmDefWindowProc(msg->hwnd, msg->message, msg->wParam, msg->lParam, &lResult))
             *result = lResult;
         // If the message wasn't handled by DWM, continue processing it as normal
         else
@@ -605,7 +655,7 @@ bool QVistaHelper::drawTitleText(QPainter *painter, const QString &text, const Q
     if (vistaState() == VistaAero) {
         const QRect rectDp = QRect(rect.topLeft() * QVistaHelper::m_devicePixelRatio,
                                    rect.size() * QVistaHelper::m_devicePixelRatio);
-        const HANDLE hTheme = OpenThemeData(GetDesktopWindow(), L"WINDOW");
+        const HANDLE hTheme = pOpenThemeData(GetDesktopWindow(), L"WINDOW");
         if (!hTheme) return false;
         // Set up a memory DC and bitmap that we'll draw into
         HDC dcMem;
@@ -639,7 +689,7 @@ bool QVistaHelper::drawTitleText(QPainter *painter, const QString &text, const Q
         dto.dwFlags = DTT_COMPOSITED|DTT_GLOWSIZE;
         dto.iGlowSize = glowSize(wizard);
 
-        DrawThemeTextEx(hTheme, dcMem, 0, 0, reinterpret_cast<LPCWSTR>(text.utf16()), -1, uFormat, &rctext, &dto );
+        pDrawThemeTextEx(hTheme, dcMem, 0, 0, reinterpret_cast<LPCWSTR>(text.utf16()), -1, uFormat, &rctext, &dto );
         BitBlt(hdc, rectDp.left(), rectDp.top(), rectDp.width(), rectDp.height(), dcMem, 0, 0, SRCCOPY);
         SelectObject(dcMem, (HGDIOBJ) hOldBmp);
         SelectObject(dcMem, (HGDIOBJ) hOldFont);
@@ -714,7 +764,7 @@ int QVistaHelper::captionSizeDp()
 
 int QVistaHelper::titleOffset()
 {
-    int iconOffset = wizard ->windowIcon().isNull() ? 0 : iconSize(wizard) + iconSpacing;
+    int iconOffset = wizard->windowIcon().isNull() ? 0 : iconSize(wizard) + textSpacing;
     return leftMargin(wizard) + iconOffset;
 }
 
@@ -733,9 +783,53 @@ int QVistaHelper::topOffset(const QPaintDevice *device)
     if (vistaState() != VistaAero)
         return titleBarSize() + 3;
     static const int aeroOffset =
-        QOperatingSystemVersion::current() < QOperatingSystemVersion::Windows8 ?
+        QOperatingSystemVersion::compare(QOperatingSystemVersion::current(), QOperatingSystemVersion::Windows7) == 0 ?
         QStyleHelper::dpiScaled(4, device) : QStyleHelper::dpiScaled(13, device);
     return aeroOffset + titleBarSize();
+}
+
+bool QVistaHelper::resolveSymbols()
+{
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        QSystemLibrary dwmLib(L"dwmapi");
+        pDwmIsCompositionEnabled =
+            (PtrDwmIsCompositionEnabled)dwmLib.resolve("DwmIsCompositionEnabled");
+        if (pDwmIsCompositionEnabled) {
+            pDwmDefWindowProc = (PtrDwmDefWindowProc)dwmLib.resolve("DwmDefWindowProc");
+            pDwmExtendFrameIntoClientArea =
+                (PtrDwmExtendFrameIntoClientArea)dwmLib.resolve("DwmExtendFrameIntoClientArea");
+        }
+        QSystemLibrary themeLib(L"uxtheme");
+        pIsAppThemed = (PtrIsAppThemed)themeLib.resolve("IsAppThemed");
+        if (pIsAppThemed) {
+            pDrawThemeBackground = (PtrDrawThemeBackground)themeLib.resolve("DrawThemeBackground");
+            pGetThemePartSize = (PtrGetThemePartSize)themeLib.resolve("GetThemePartSize");
+            pGetThemeColor = (PtrGetThemeColor)themeLib.resolve("GetThemeColor");
+            pIsThemeActive = (PtrIsThemeActive)themeLib.resolve("IsThemeActive");
+            pOpenThemeData = (PtrOpenThemeData)themeLib.resolve("OpenThemeData");
+            pCloseThemeData = (PtrCloseThemeData)themeLib.resolve("CloseThemeData");
+            pGetThemeSysFont = (PtrGetThemeSysFont)themeLib.resolve("GetThemeSysFont");
+            pDrawThemeTextEx = (PtrDrawThemeTextEx)themeLib.resolve("DrawThemeTextEx");
+            pSetWindowThemeAttribute = (PtrSetWindowThemeAttribute)themeLib.resolve("SetWindowThemeAttribute");
+        }
+    }
+
+    return
+        pDwmIsCompositionEnabled != nullptr
+        && pDwmDefWindowProc != nullptr
+        && pDwmExtendFrameIntoClientArea != nullptr
+        && pIsAppThemed != nullptr
+        && pDrawThemeBackground != nullptr
+        && pGetThemePartSize != nullptr
+        && pGetThemeColor != 0
+        && pIsThemeActive != nullptr
+        && pOpenThemeData != nullptr
+        && pCloseThemeData != nullptr
+        && pGetThemeSysFont != nullptr
+        && pDrawThemeTextEx != nullptr
+        && pSetWindowThemeAttribute != nullptr;
 }
 
 QT_END_NAMESPACE

@@ -499,7 +499,9 @@ bool QNativeSocketEnginePrivate::setOption(QNativeSocketEngine::SocketOption opt
     switch (opt) {
     case QNativeSocketEngine::SendBufferSocketOption:
         // see QTBUG-30478 SO_SNDBUF should not be used on Vista or later
-        return false;
+        if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista)
+            return false;
+        break;
     case QNativeSocketEngine::NonBlockingSocketOption:
         {
         unsigned long buf = v;
@@ -510,7 +512,6 @@ bool QNativeSocketEnginePrivate::setOption(QNativeSocketEngine::SocketOption opt
             return false;
         }
         return true;
-        break;
         }
     case QNativeSocketEngine::TypeOfServiceOption:
     case QNativeSocketEngine::MaxStreamsSocketOption:

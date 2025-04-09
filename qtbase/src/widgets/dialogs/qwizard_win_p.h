@@ -133,6 +133,7 @@ private:
         { return backButton_->isVisible() ? backButtonSize(device) + iconSpacing : 0; }
 
     int titleOffset();
+    bool resolveSymbols();
     void drawTitleBar(QPainter *painter);
     void setMouseCursor(QPoint pos);
     void collapseTopFrameStrut();
@@ -147,6 +148,7 @@ private:
     bool eventFilter(QObject *obj, QEvent *event) override;
 
     static int instanceCount;
+    static bool isVista;
     static VistaState cachedVistaState;
     static bool isCompositionEnabled();
     static bool isThemeActive();
@@ -160,6 +162,7 @@ private:
 
     int titleBarOffset;  // Extra spacing above the text
     int iconSpacing;    // Space between button and icon
+    int textSpacing;    // Space between icon and text
     static int m_devicePixelRatio;
 };
 

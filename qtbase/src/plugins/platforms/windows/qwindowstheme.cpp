@@ -65,7 +65,6 @@
 #include <QtCore/qdebug.h>
 #include <QtCore/qtextstream.h>
 #include <QtCore/qoperatingsystemversion.h>
-#include <QtCore/qsysinfo.h>
 #include <QtCore/qcache.h>
 #include <QtCore/qthread.h>
 #include <QtCore/qmutex.h>
@@ -459,7 +458,12 @@ static inline QStringList iconThemeSearchPaths()
 
 static inline QStringList styleNames()
 {
-    return { QStringLiteral("WindowsVista"), QStringLiteral("Windows") };
+    QStringList result;
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista)
+        result.append(QStringLiteral("WindowsVista"));
+    result.append(QStringLiteral("WindowsXP"));
+    result.append(QStringLiteral("Windows"));
+    return result;
 }
 
 static inline int uiEffects()
@@ -773,13 +777,15 @@ QPixmap QWindowsTheme::standardPixmap(StandardPixmap sp, const QSizeF &pixmapSiz
         break;
     }
 
-    if (stockId != SIID_INVALID) {
+    if (stockId != SIID_INVALID
+        && QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista
+        && QWindowsContext::shell32dll.sHGetStockIconInfo) {
         QPixmap pixmap;
         SHSTOCKICONINFO iconInfo;
         memset(&iconInfo, 0, sizeof(iconInfo));
         iconInfo.cbSize = sizeof(iconInfo);
         stockFlags |= (pixmapSize.width() > 16 ? SHGFI_LARGEICON : SHGFI_SMALLICON);
-        if (SHGetStockIconInfo(stockId, SHGFI_ICON | stockFlags, &iconInfo) == S_OK) {
+        if (QWindowsContext::shell32dll.sHGetStockIconInfo(stockId, SHGFI_ICON | stockFlags, &iconInfo) == S_OK) {
             pixmap = qt_pixmapFromWinHICON(iconInfo.hIcon);
             DestroyIcon(iconInfo.hIcon);
             return pixmap;
@@ -859,8 +865,13 @@ static QPixmap pixmapFromShellImageList(int iImageList, const SHFILEINFO &info)
     // For MinGW:
     static const IID iID_IImageList = {0x46eb5926, 0x582e, 0x4017, {0x9f, 0xdf, 0xe8, 0x99, 0x8d, 0xaa, 0x9, 0x50}};
 
+    if (!QWindowsContext::shell32dll.sHGetImageList)
+        return result;
+    if (iImageList == SHIL_JUMBO && QOperatingSystemVersion::current() < QOperatingSystemVersion::WindowsVista)
+        return result;
+
     IImageList *imageList = nullptr;
-    HRESULT hr = SHGetImageList(iImageList, iID_IImageList, reinterpret_cast<void **>(&imageList));
+    HRESULT hr = QWindowsContext::shell32dll.sHGetImageList(iImageList, iID_IImageList, reinterpret_cast<void **>(&imageList));
     if (hr != S_OK)
         return result;
     HICON hIcon;

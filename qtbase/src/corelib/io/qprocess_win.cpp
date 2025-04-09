@@ -53,6 +53,7 @@
 #include <private/qsystemlibrary_p.h>
 #include <private/qthread_p.h>
 #include <qdebug.h>
+#include <qoperatingsystemversion.h>
 
 #include "private/qfsfileengine_p.h" // for longFileName
 
@@ -114,7 +115,10 @@ static void qt_create_pipe(Q_PIPE *pipe, bool isInputPipe)
             dwOpenMode |= PIPE_ACCESS_INBOUND;
             dwInputBufferSize = dwPipeBufferSize;
         }
-        DWORD dwPipeFlags = PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS;
+        DWORD dwPipeFlags = PIPE_TYPE_BYTE | PIPE_WAIT;
+        if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista)
+            dwPipeFlags |= PIPE_REJECT_REMOTE_CLIENTS;
+
         hServer = CreateNamedPipe(pipeName,
                                   dwOpenMode,
                                   dwPipeFlags,

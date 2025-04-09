@@ -85,7 +85,21 @@ class QTouchDevice;
 struct QWindowsUser32DLL
 {
     inline void init();
+    inline bool initTouch();
+
     inline bool supportsPointerApi();
+
+    typedef BOOL (WINAPI *IsTouchWindow)(HWND, PULONG);
+    typedef BOOL (WINAPI *RegisterTouchWindow)(HWND, ULONG);
+    typedef BOOL (WINAPI *UnregisterTouchWindow)(HWND);
+    typedef BOOL (WINAPI *GetTouchInputInfo)(HANDLE, UINT, PVOID, int);
+    typedef BOOL (WINAPI *CloseTouchInputHandle)(HANDLE);
+    typedef BOOL (WINAPI *SetLayeredWindowAttributes)(HWND, COLORREF, BYTE, DWORD);
+    typedef BOOL (WINAPI *UpdateLayeredWindow)(HWND, HDC , const POINT *, const SIZE *, HDC, const POINT *, COLORREF, const BLENDFUNCTION *, DWORD);
+    typedef BOOL (WINAPI *UpdateLayeredWindowIndirect)(HWND, const UPDATELAYEREDWINDOWINFO *);
+    typedef BOOL (WINAPI *IsHungAppWindow)(HWND);
+    typedef HPOWERNOTIFY (WINAPI *RegisterPowerSettingNotification)(HANDLE, LPCGUID, DWORD);
+    typedef BOOL (WINAPI *UnregisterPowerSettingNotification)(HPOWERNOTIFY);
 
     typedef BOOL (WINAPI *EnableMouseInPointer)(BOOL);
     typedef BOOL (WINAPI *GetPointerType)(UINT32, PVOID);
@@ -107,6 +121,18 @@ struct QWindowsUser32DLL
     typedef int  (WINAPI *GetWindowDpiAwarenessContext)(HWND);
     typedef int  (WINAPI *GetAwarenessFromDpiAwarenessContext)(int);
     typedef BOOL (WINAPI *SystemParametersInfoForDpi)(UINT, UINT, PVOID, UINT, UINT);
+
+    IsTouchWindow isTouchWindow = nullptr;
+    RegisterTouchWindow registerTouchWindow = nullptr;
+    UnregisterTouchWindow unregisterTouchWindow = nullptr;
+    GetTouchInputInfo getTouchInputInfo = nullptr;
+    CloseTouchInputHandle closeTouchInputHandle = nullptr;
+    SetLayeredWindowAttributes setLayeredWindowAttributes = nullptr;
+    UpdateLayeredWindow updateLayeredWindow = nullptr;
+    UpdateLayeredWindowIndirect updateLayeredWindowIndirect = nullptr;
+    IsHungAppWindow isHungAppWindow = nullptr;
+    RegisterPowerSettingNotification registerPowerSettingNotification = nullptr;
+    UnregisterPowerSettingNotification unregisterPowerSettingNotification = nullptr;
 
     // Windows pointer functions (Windows 8 or later).
     EnableMouseInPointer enableMouseInPointer = nullptr;
@@ -137,6 +163,23 @@ struct QWindowsUser32DLL
     GetWindowDpiAwarenessContext getWindowDpiAwarenessContext = nullptr;
     GetAwarenessFromDpiAwarenessContext getAwarenessFromDpiAwarenessContext = nullptr;
     SystemParametersInfoForDpi systemParametersInfoForDpi = nullptr;
+};
+
+struct QWindowsShell32DLL
+{
+    inline void init();
+
+    typedef HRESULT (WINAPI *SHCreateItemFromParsingName)(PCWSTR, IBindCtx *, const GUID&, void **);
+    typedef HRESULT (WINAPI *SHGetKnownFolderIDList)(const GUID &, DWORD, HANDLE, PIDLIST_ABSOLUTE *);
+    typedef HRESULT (WINAPI *SHGetStockIconInfo)(int , int , _SHSTOCKICONINFO *);
+    typedef HRESULT (WINAPI *SHGetImageList)(int, REFIID , void **);
+    typedef HRESULT (WINAPI *SHCreateItemFromIDList)(PCIDLIST_ABSOLUTE, REFIID, void **);
+
+    SHCreateItemFromParsingName sHCreateItemFromParsingName = nullptr;
+    SHGetKnownFolderIDList sHGetKnownFolderIDList = nullptr;
+    SHGetStockIconInfo sHGetStockIconInfo = nullptr;
+    SHGetImageList sHGetImageList = nullptr;
+    SHCreateItemFromIDList sHCreateItemFromIDList = nullptr;
 };
 
 // Shell scaling library (Windows 8.1 onwards)
@@ -246,6 +289,7 @@ public:
     QWindowsTabletSupport *tabletSupport() const;
 
     static QWindowsUser32DLL user32dll;
+    static QWindowsShell32DLL shell32dll;
     static QWindowsShcoreDLL shcoredll;
 
     static QByteArray comErrorString(HRESULT hr);

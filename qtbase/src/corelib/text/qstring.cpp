@@ -6550,7 +6550,7 @@ int QString::localeAwareCompare_helper(const QChar *data1, int length1,
     const QString lhs = QString::fromRawData(data1, length1).normalized(QString::NormalizationForm_C);
     const QString rhs = QString::fromRawData(data2, length2).normalized(QString::NormalizationForm_C);
 #  if defined(Q_OS_WIN)
-    int res = CompareStringEx(LOCALE_NAME_USER_DEFAULT, 0, (LPWSTR)lhs.constData(), lhs.length(), (LPWSTR)rhs.constData(), rhs.length(), NULL, NULL, 0);
+    int res = CompareString(LOCALE_USER_DEFAULT, 0, (LPWSTR)lhs.constData(), lhs.length(), (LPWSTR)rhs.constData(), rhs.length());
 
     switch (res) {
     case CSTR_LESS_THAN:

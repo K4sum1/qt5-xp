@@ -59,10 +59,17 @@
 #  include <qt_windows.h>
 #  ifndef Q_OS_WINRT
 #      include <shlobj.h>
+#      include <private/qsystemlibrary_p.h>
+#      include <QtCore/QOperatingSystemVersion>
 #  endif
 #endif
 
 QT_BEGIN_NAMESPACE
+
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
+typedef HRESULT (WINAPI *PtrSHCreateItemFromParsingName)(PCWSTR, IBindCtx *, const GUID&, void **);
+static PtrSHCreateItemFromParsingName ptrSHCreateItemFromParsingName = nullptr;
+#endif
 
 /*!
     \enum QFileSystemModel::Roles
@@ -1787,11 +1794,24 @@ void QFileSystemModelPrivate::_q_directoryChanged(const QString &directory, cons
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 static QString volumeName(const QString &path)
 {
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion::WindowsVista) {
+        wchar_t name[MAX_PATH + 1];
+        //GetVolumeInformation requires to add trailing backslash
+        const QString nodeName = path + QLatin1String("\\");
+        BOOL success = ::GetVolumeInformationW((wchar_t *)(nodeName.utf16()),
+                name, MAX_PATH + 1, NULL, 0, NULL, NULL, 0);
+        return success ? QString::fromWCharArray(name) : QString();
+    }
+    if (!ptrSHCreateItemFromParsingName) {
+        ptrSHCreateItemFromParsingName = reinterpret_cast<PtrSHCreateItemFromParsingName>(
+            QSystemLibrary::resolve(QLatin1String("shell32"), "SHCreateItemFromParsingName"));
+        if (!ptrSHCreateItemFromParsingName)
+            return QString();
+    }
     IShellItem *item = nullptr;
     const QString native = QDir::toNativeSeparators(path);
-    HRESULT hr = SHCreateItemFromParsingName(reinterpret_cast<const wchar_t *>(native.utf16()),
-                                             nullptr, IID_IShellItem,
-                                             reinterpret_cast<void **>(&item));
+    HRESULT hr = ptrSHCreateItemFromParsingName(reinterpret_cast<const wchar_t *>(native.utf16()),
+        nullptr, IID_IShellItem, reinterpret_cast<void **>(&item));
     if (FAILED(hr))
         return QString();
     LPWSTR name = nullptr;

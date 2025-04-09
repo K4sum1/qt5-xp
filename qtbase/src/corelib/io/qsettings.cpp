@@ -83,6 +83,8 @@
 #  include <qt_windows.h>
 #  ifndef Q_OS_WINRT
 #    include <shlobj.h>
+#    include <private/qsystemlibrary_p.h>
+#    include <qoperatingsystemversion.h>
 #  endif
 #endif
 
@@ -965,8 +967,13 @@ static QString windowsConfigPath(const KNOWNFOLDERID &type)
 {
     QString result;
 
+    typedef HRESULT (WINAPI *GetKnownFolderPath)(const GUID&, DWORD, HANDLE, LPWSTR*);
+    static GetKnownFolderPath sHGetKnownFolderPath = nullptr;
+    if (!sHGetKnownFolderPath)
+        sHGetKnownFolderPath = reinterpret_cast<GetKnownFolderPath>(QSystemLibrary::resolve(QLatin1String("shell32"), "SHGetKnownFolderPath"));
+
     PWSTR path = nullptr;
-    if (SHGetKnownFolderPath(type, KF_FLAG_DONT_VERIFY, NULL, &path) == S_OK) {
+    if (sHGetKnownFolderPath && sHGetKnownFolderPath(type, KF_FLAG_DONT_VERIFY, NULL, &path) == S_OK) {
         result = QString::fromWCharArray(path);
         CoTaskMemFree(path);
     }
@@ -981,6 +988,28 @@ static QString windowsConfigPath(const KNOWNFOLDERID &type)
 
     return result;
 }
+
+static QString windowsConfigPathLegacy(int type)
+{
+    QString result;
+    wchar_t path[MAX_PATH];
+    if (SHGetSpecialFolderPath(0, path, type, false))
+        result = QString::fromWCharArray(path);
+
+    if (result.isEmpty())
+        switch (type)
+        {
+            case CSIDL_COMMON_APPDATA:
+                result = QLatin1String("C:\\temp\\qt-common");
+                break;
+            case CSIDL_APPDATA:
+                result = QLatin1String("C:\\temp\\qt-user");
+                break;
+        }
+
+    return result;
+}
+
 #elif defined(Q_OS_WINRT) // Q_OS_WIN && !Q_OS_WINRT
 
 enum ConfigPathType {
@@ -1018,6 +1047,7 @@ static QString windowsConfigPath(ConfigPathType type)
     }
     return result;
 }
+
 #endif // Q_OS_WINRT
 
 static inline int pathHashKey(QSettings::Format format, QSettings::Scope scope)
@@ -1076,8 +1106,17 @@ static std::unique_lock<QBasicMutex> initDefaultPaths(std::unique_lock<QBasicMut
         const QString roamingAppDataFolder = windowsConfigPath(ConfigPath_UserAppData);
         const QString programDataFolder = windowsConfigPath(ConfigPath_CommonAppData);
 #  else
-        const QString roamingAppDataFolder = windowsConfigPath(FOLDERID_RoamingAppData);
-        const QString programDataFolder = windowsConfigPath(FOLDERID_ProgramData);
+        QString roamingAppDataFolder, programDataFolder;
+        if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista)
+        {
+            roamingAppDataFolder = windowsConfigPath(FOLDERID_RoamingAppData);
+            programDataFolder = windowsConfigPath(FOLDERID_ProgramData);
+        }
+        else
+        {
+            roamingAppDataFolder = windowsConfigPathLegacy(CSIDL_APPDATA);
+            programDataFolder = windowsConfigPathLegacy(CSIDL_COMMON_APPDATA);
+        }
 #  endif
         pathHash->insert(pathHashKey(QSettings::IniFormat, QSettings::UserScope),
                          Path(roamingAppDataFolder + QDir::separator(), false));

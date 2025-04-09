@@ -60,6 +60,8 @@ public:
         Android
     };
 
+    static const QOperatingSystemVersion WindowsXP;
+    static const QOperatingSystemVersion WindowsVista;
     static const QOperatingSystemVersion Windows7;
     static const QOperatingSystemVersion Windows8;
     static const QOperatingSystemVersion Windows8_1;
@@ -137,14 +139,14 @@ public:
     friend bool operator<=(const QOperatingSystemVersion &lhs, const QOperatingSystemVersion &rhs)
     { return lhs.type() == rhs.type() && QOperatingSystemVersion::compare(lhs, rhs) <= 0; }
 
+    static int compare(const QOperatingSystemVersion &v1, const QOperatingSystemVersion &v2);
+
 private:
     QOperatingSystemVersion() = default;
     OSType m_os;
     int m_major;
     int m_minor;
     int m_micro;
-
-    static int compare(const QOperatingSystemVersion &v1, const QOperatingSystemVersion &v2);
 };
 Q_DECLARE_TYPEINFO(QOperatingSystemVersion, QT_VERSION < QT_VERSION_CHECK(6, 0, 0) ? Q_RELOCATABLE_TYPE : Q_PRIMITIVE_TYPE);
 

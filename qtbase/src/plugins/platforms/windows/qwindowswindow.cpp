@@ -79,12 +79,39 @@
 #include <QtCore/qoperatingsystemversion.h>
 
 #include <dwmapi.h>
+#include <QtCore/private/qsystemlibrary_p.h>
 
 #if QT_CONFIG(vulkan)
 #include "qwindowsvulkaninstance.h"
 #endif
 
 QT_BEGIN_NAMESPACE
+
+static bool dwmApiResolved = false;
+
+typedef BOOL (WINAPI *PtrDwmIsCompositionEnabled)(BOOL *);
+typedef HRESULT (WINAPI *PtrDwmEnableBlurBehindWindow)(HWND, const void *);
+typedef HRESULT (WINAPI *PtrDwmGetWindowAttribute)(HWND, DWORD, void *, DWORD);
+typedef HRESULT (WINAPI *PtrDwmSetWindowAttribute)(HWND, DWORD, const void *, DWORD);
+
+static PtrDwmIsCompositionEnabled ptrDwmIsCompositionEnabled;
+static PtrDwmEnableBlurBehindWindow ptrDwmEnableBlurBehindWindow;
+static PtrDwmGetWindowAttribute ptrDwmGetWindowAttribute;
+static PtrDwmSetWindowAttribute ptrDwmSetWindowAttribute;
+
+static void resolveDwmApi()
+{
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista) {
+        QSystemLibrary library(QStringLiteral("dwmapi"));
+        if (library.load()) {
+            ptrDwmIsCompositionEnabled = (PtrDwmIsCompositionEnabled) library.resolve("DwmIsCompositionEnabled");
+            ptrDwmEnableBlurBehindWindow = (PtrDwmEnableBlurBehindWindow) library.resolve("DwmEnableBlurBehindWindow");
+            ptrDwmGetWindowAttribute = (PtrDwmGetWindowAttribute) library.resolve("DwmGetWindowAttribute");
+            ptrDwmSetWindowAttribute = (PtrDwmSetWindowAttribute) library.resolve("DwmSetWindowAttribute");
+        }
+    }
+    dwmApiResolved = true;
+}
 
 using QWindowCreationContextPtr = QSharedPointer<QWindowCreationContext>;
 
@@ -358,8 +385,12 @@ static inline bool windowIsAccelerated(const QWindow *w)
 
 static bool applyBlurBehindWindow(HWND hwnd)
 {
+    if (!dwmApiResolved) resolveDwmApi();
+    if (!ptrDwmIsCompositionEnabled || !ptrDwmEnableBlurBehindWindow)
+        return false;
+    
     BOOL compositionEnabled;
-    if (DwmIsCompositionEnabled(&compositionEnabled) != S_OK)
+    if (ptrDwmIsCompositionEnabled(&compositionEnabled) != S_OK)
         return false;
 
     DWM_BLURBEHIND blurBehind = {0, 0, nullptr, 0};
@@ -373,7 +404,7 @@ static bool applyBlurBehindWindow(HWND hwnd)
         blurBehind.fEnable = FALSE;
     }
 
-    const bool result = DwmEnableBlurBehindWindow(hwnd, &blurBehind) == S_OK;
+    const bool result = ptrDwmEnableBlurBehindWindow(hwnd, &blurBehind) == S_OK;
 
     if (blurBehind.hRgnBlur)
         DeleteObject(blurBehind.hRgnBlur);
@@ -1362,7 +1393,7 @@ QWindowsWindow::~QWindowsWindow()
 {
     setFlag(WithinDestroy);
     if (testFlag(TouchRegistered))
-        UnregisterTouchWindow(m_data.hwnd);
+        QWindowsContext::user32dll.unregisterTouchWindow(m_data.hwnd);
     destroyWindow();
     destroyIcon();
 }
@@ -2063,8 +2094,10 @@ void QWindowsWindow::releaseDC()
 
 static inline bool dwmIsCompositionEnabled()
 {
-    BOOL dWmCompositionEnabled = FALSE;
-    return SUCCEEDED(DwmIsCompositionEnabled(&dWmCompositionEnabled)) && dWmCompositionEnabled == TRUE;
+    if (!dwmApiResolved) resolveDwmApi();
+    if (!ptrDwmIsCompositionEnabled) return false;
+    BOOL flag = FALSE;
+    return SUCCEEDED(ptrDwmIsCompositionEnabled(&flag)) && flag == TRUE;
 }
 
 static inline bool isSoftwareGl()
@@ -2933,10 +2966,12 @@ enum : WORD {
 
 static bool queryDarkBorder(HWND hwnd)
 {
+    if (!dwmApiResolved) resolveDwmApi();
+    if (!ptrDwmGetWindowAttribute) return false;
     BOOL result = FALSE;
     const bool ok =
-        SUCCEEDED(DwmGetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, &result, sizeof(result)))
-        || SUCCEEDED(DwmGetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20h1, &result, sizeof(result)));
+        SUCCEEDED(ptrDwmGetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, &result, sizeof(result)))
+        || SUCCEEDED(ptrDwmGetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20h1, &result, sizeof(result)));
     if (!ok)
         qWarning("%s: Unable to retrieve dark window border setting.", __FUNCTION__);
     return result == TRUE;
@@ -2944,10 +2979,12 @@ static bool queryDarkBorder(HWND hwnd)
 
 bool QWindowsWindow::setDarkBorderToWindow(HWND hwnd, bool d)
 {
+    if (!dwmApiResolved) resolveDwmApi();
+    if (!ptrDwmSetWindowAttribute) return false;
     const BOOL darkBorder = d ? TRUE : FALSE;
     const bool ok =
-        SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, &darkBorder, sizeof(darkBorder)))
-        || SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20h1, &darkBorder, sizeof(darkBorder)));
+        SUCCEEDED(ptrDwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, &darkBorder, sizeof(darkBorder)))
+        || SUCCEEDED(ptrDwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20h1, &darkBorder, sizeof(darkBorder)));
     if (!ok)
         qWarning("%s: Unable to set dark window border.", __FUNCTION__);
     return ok;
@@ -3057,13 +3094,15 @@ void QWindowsWindow::registerTouchWindow(QWindowsWindowFunctions::TouchWindowTou
 {
     if ((QWindowsContext::instance()->systemInfo() & QWindowsContext::SI_SupportsTouch)
         && !testFlag(TouchRegistered)) {
+        if (!QWindowsContext::user32dll.initTouch())
+            return;
         ULONG touchFlags = 0;
-        const bool ret = IsTouchWindow(m_data.hwnd, &touchFlags);
+        const bool ret = QWindowsContext::user32dll.isTouchWindow(m_data.hwnd, &touchFlags);
         // Return if it is not a touch window or the flags are already set by a hook
         // such as HCBT_CREATEWND
         if (ret || touchFlags != 0)
             return;
-        if (RegisterTouchWindow(m_data.hwnd, ULONG(touchTypes)))
+        if (QWindowsContext::user32dll.registerTouchWindow(m_data.hwnd, ULONG(touchTypes)))
             setFlag(TouchRegistered);
         else
             qErrnoWarning("RegisterTouchWindow() failed for window '%s'.", qPrintable(window()->objectName()));
