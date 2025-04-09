@@ -1,0 +1,14 @@
+[tst_resize_count]
+# QTBUG-66345
+opensuse-42.3
+ubuntu-16.04
+
+[mouseMoveWithPopup]
+winrt
+
+[tst_dnd_events]
+sles-15.4 # QTBUG-112760
+
+# QTBUG-96270
+[tst_paintEventOnSecondShow]
+opensuse

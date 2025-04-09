@@ -1,0 +1,7 @@
+[moveCursorBiggerJump]
+osx
+[mouseWheel:scroll down per pixel]
+macos
+[columnViewportPosition]
+winrt
+

@@ -1,0 +1,5 @@
+[testInvalidate)
+# QTBUG-65614
+b2qt
+[testThatStuffWorks]
+b2qt

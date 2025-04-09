@@ -1,0 +1,15 @@
+[mouseSelection]
+opensuse-leap
+
+# QTBUG-78846
+[mouseSelectionMode]
+opensuse-leap
+
+[hAlignVisual]
+sles
+
+# QTBUG-82052
+[linkHover]
+macos ci
+sles-15.4
+

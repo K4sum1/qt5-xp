@@ -1,0 +1,7 @@
+[macCopyUnicodeToClipboard]
+osx
+
+[mouseMovementProperties]
+windows
+macos # Can't move cursor (QTBUG-76312)
+sles-15.4 # QTBUG-111297

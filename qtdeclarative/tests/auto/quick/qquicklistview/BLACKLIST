@@ -1,0 +1,16 @@
+[enforceRange_withoutHighlight]
+opensuse-42.3
+opensuse-leap
+#QTBUG-53863
+[populateTransitions]
+opensuse-42.1
+[contentHeightWithDelayRemove]
+macos
+#QTBUG-75960
+#QTBUG-76652
+[currentIndex]
+# QTBUG-101498
+ubuntu-20
+macos
+opensuse-leap
+ubuntu-18.04

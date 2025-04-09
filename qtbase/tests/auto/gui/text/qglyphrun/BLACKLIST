@@ -1,0 +1,7 @@
+[mixedScripts]
+ubuntu-18.04
+ubuntu-20.04
+ubuntu-22.04
+b2qt
+[drawRightToLeft]
+opensuse-leap-15.4 # QTBUG-89169

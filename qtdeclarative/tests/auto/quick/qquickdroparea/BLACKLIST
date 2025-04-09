@@ -1,0 +1,5 @@
+# Blacklist for testing
+# QTBUG-99765
+[containsDrag_internal]
+ubuntu-20.04
+sles-15.4 

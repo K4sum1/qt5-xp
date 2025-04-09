@@ -1,0 +1,18 @@
+# QTBUG-15111
+
+[activeMode:WithoutProxy]
+redhatenterpriselinuxworkstation-6.6
+
+[activeMode:WithoutProxyWithSession]
+redhatenterpriselinuxworkstation-6.6
+
+[list]
+opensuse-leap
+windows-7sp1
+windows-10 msvc-2015
+ubuntu
+osx
+[list:epsvNotSupported]
+*
+[initTestCase]
+ci ubuntu-20.04 # QTBUG-109022

@@ -1,0 +1,11 @@
+Version: 2
+Module only: True
+Include: [ qt5.yaml ]
+Configurations:
+-
+    Template: 'qtci-macos-11-x86_64-104'
+    Target os: 'IOS_ANY'
+    Target arch: 'multi'
+    Compiler: 'Clang'
+    Features: ['Packaging', 'DisableTests']
+    Configure arguments: '-opensource -confirm-license -verbose -prefix /Users/qt/work/install -debug-and-release -nomake tests -no-icu -nomake examples -no-sql-mysql -no-sql-psql -plugin-sql-sqlite -static -xplatform macx-ios-clang'
