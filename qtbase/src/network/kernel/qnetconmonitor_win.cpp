@@ -59,6 +59,27 @@ using namespace Microsoft::WRL;
 
 QT_BEGIN_NAMESPACE
 
+typedef NETIO_STATUS (WINAPI *PtrConvertInterfaceIndexToLuid)(NET_IFINDEX, PNET_LUID);
+typedef NETIO_STATUS (WINAPI *PtrConvertInterfaceLuidToGuid)(const NET_LUID *, GUID *);
+static PtrConvertInterfaceIndexToLuid ptrConvertInterfaceIndexToLuid = 0;
+static PtrConvertInterfaceLuidToGuid ptrConvertInterfaceLuidToGuid = 0;
+
+static void resolveLibs()
+{
+    // try to find the functions we need from Iphlpapi.dll
+    static bool done = false;
+
+    if (!done) {
+        HINSTANCE iphlpapiHnd = GetModuleHandle(L"iphlpapi");
+        Q_ASSERT(iphlpapiHnd);
+
+        // since Windows Vista
+        ptrConvertInterfaceIndexToLuid = (PtrConvertInterfaceIndexToLuid)GetProcAddress(iphlpapiHnd, "ConvertInterfaceIndexToLuid");
+        ptrConvertInterfaceLuidToGuid = (PtrConvertInterfaceLuidToGuid)GetProcAddress(iphlpapiHnd, "ConvertInterfaceLuidToGuid");
+        done = true;
+    }
+}
+
 Q_LOGGING_CATEGORY(lcNetMon, "qt.network.monitor");
 
 namespace {
@@ -274,15 +295,21 @@ bool QNetworkConnectionEvents::setTarget(const QNetworkInterface &iface)
     // Unset this in case it's already set to something
     currentConnectionId = QUuid{};
 
-    NET_LUID luid;
-    if (ConvertInterfaceIndexToLuid(iface.index(), &luid) != NO_ERROR) {
-        qCWarning(lcNetMon, "Could not get the LUID for the interface.");
-        return false;
+    resolveLibs();
+    if (ptrConvertInterfaceIndexToLuid && ptrConvertInterfaceLuidToGuid) {
+        NET_LUID luid;
+        if (ptrConvertInterfaceIndexToLuid(iface.index(), &luid) != NO_ERROR) {
+            qCWarning(lcNetMon, "Could not get the LUID for the interface.");
+            return false;
+        }
     }
-    GUID guid;
-    if (ConvertInterfaceLuidToGuid(&luid, &guid) != NO_ERROR) {
-        qCWarning(lcNetMon, "Could not get the GUID for the interface.");
-        return false;
+    resolveLibs();
+    if (ptrConvertInterfaceIndexToLuid && ptrConvertInterfaceLuidToGuid) {
+        GUID guid;
+        if (ptrConvertInterfaceLuidToGuid(&luid, &guid) != NO_ERROR) {
+            qCWarning(lcNetMon, "Could not get the GUID for the interface.");
+            return false;
+        }
     }
     ComPtr<INetworkConnection> connection = getNetworkConnectionFromAdapterGuid(guid);
     if (!connection) {
