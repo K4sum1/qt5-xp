@@ -235,7 +235,7 @@ static PixmapEntryList extractShellIcons(const QString &sourceFile, bool addOver
             }
         } // for standardSizeEntryCount
         // Windows Vista onwards: extract large/jumbo icons
-        if (info.hIcon) {
+        if (QSysInfo::windowsVersion() >= QSysInfo::WV_VISTA && info.hIcon) {
             const QPixmap extraLarge = pixmapFromShellImageList(sHIL_EXTRALARGE, info);
             if (!extraLarge.isNull()) {
                 PixmapEntry entry;

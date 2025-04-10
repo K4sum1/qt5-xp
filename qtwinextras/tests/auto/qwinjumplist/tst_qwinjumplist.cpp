@@ -30,7 +30,6 @@
 #include <QWinJumpList>
 #include <QWinJumpListItem>
 #include <QWinJumpListCategory>
-#include <QOperatingSystemVersion>
 
 Q_DECLARE_METATYPE(QWinJumpListItem::Type)
 
@@ -56,7 +55,7 @@ static inline QByteArray msgFileNameMismatch(const QString &f1, const QString &f
 
 void tst_QWinJumpList::testRecent()
 {
-    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows8_1)
+    if (QSysInfo::windowsVersion() >= QSysInfo::WV_WINDOWS8_1)
         QSKIP("QTBUG-48751: Recent items do not work on Windows 8.1 or 10", Continue);
     QScopedPointer<QWinJumpList> jumplist(new QWinJumpList);
     QWinJumpListCategory *recent1 = jumplist->recent();
@@ -105,7 +104,7 @@ void tst_QWinJumpList::testRecent()
 
 void tst_QWinJumpList::testFrequent()
 {
-    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows8_1)
+    if (QSysInfo::windowsVersion() >= QSysInfo::WV_WINDOWS8_1)
         QSKIP("QTBUG-48751: Frequent items do not work on Windows 8.1 or 10", Continue);
     QScopedPointer<QWinJumpList> jumplist(new QWinJumpList);
     QWinJumpListCategory *frequent1 = jumplist->frequent();

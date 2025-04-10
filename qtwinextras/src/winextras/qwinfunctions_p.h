@@ -54,18 +54,79 @@
 #include <QtCore/qstring.h>
 #include <QtCore/qt_windows.h>
 #include <uxtheme.h>
-#include <dwmapi.h>
 
 QT_BEGIN_NAMESPACE
 
-enum qt_DWMWINDOWATTRIBUTE // Not present in MinGW 4.9
+enum qt_DWMWINDOWATTRIBUTE
 {
-    qt_DWMWA_DISALLOW_PEEK = 11,
-    qt_DWMWA_EXCLUDED_FROM_PEEK = 12,
+    qt_DWMWA_NCRENDERING_ENABLED = 1,
+    qt_DWMWA_NCRENDERING_POLICY,
+    qt_DWMWA_TRANSITIONS_FORCEDISABLED,
+    qt_DWMWA_ALLOW_NCPAINT,
+    qt_DWMWA_CAPTION_BUTTON_BOUNDS,
+    qt_DWMWA_NONCLIENT_RTL_LAYOUT,
+    qt_DWMWA_FORCE_ICONIC_REPRESENTATION,
+    qt_DWMWA_FLIP3D_POLICY,
+    qt_DWMWA_EXTENDED_FRAME_BOUNDS,
+    qt_DWMWA_HAS_ICONIC_BITMAP,
+    qt_DWMWA_DISALLOW_PEEK,
+    qt_DWMWA_EXCLUDED_FROM_PEEK,
+    qt_DWMWA_CLOAK,
+    qt_DWMWA_CLOAKED,
+    qt_DWMWA_FREEZE_REPRESENTATION,
+    qt_DWMWA_LAST
 };
 
-namespace QtDwmApiDll
+enum qt_DWMFLIP3DWINDOWPOLICY {
+    qt_DWMFLIP3D_DEFAULT,
+    qt_DWMFLIP3D_EXCLUDEBELOW,
+    qt_DWMFLIP3D_EXCLUDEABOVE,
+    qt_DWMFLIP3D_LAST
+};
+
+#include <pshpack1.h>
+
+struct qt_DWM_BLURBEHIND {
+    DWORD dwFlags;
+    BOOL  fEnable;
+    HRGN  hRgnBlur;
+    BOOL  fTransitionOnMaximized;
+};
+
+#include <poppack.h>
+
+const int qt_DWM_BB_ENABLE                = 0x00000001;
+const int qt_DWM_BB_BLURREGION            = 0x00000002;
+const int qt_DWM_BB_TRANSITIONONMAXIMIZED = 0x00000004;
+
+struct QtDwmApiDll
 {
+    typedef HRESULT (STDAPICALLTYPE *DwmGetColorizationColor)(DWORD *, BOOL *);
+    typedef HRESULT (STDAPICALLTYPE *DwmSetWindowAttribute)(HWND, DWORD, LPCVOID, DWORD);
+    typedef HRESULT (STDAPICALLTYPE *DwmGetWindowAttribute)(HWND, DWORD, PVOID, DWORD);
+    typedef HRESULT (STDAPICALLTYPE *DwmExtendFrameIntoClientArea)(HWND, const MARGINS *);
+    typedef HRESULT (STDAPICALLTYPE *DwmEnableBlurBehindWindow)(HWND, const qt_DWM_BLURBEHIND *);
+    typedef HRESULT (STDAPICALLTYPE *DwmIsCompositionEnabled)(BOOL *);
+    typedef HRESULT (STDAPICALLTYPE *DwmEnableComposition)(UINT);
+    typedef HRESULT (STDAPICALLTYPE *DwmSetIconicThumbnail)(HWND, HBITMAP, DWORD);
+    typedef HRESULT (STDAPICALLTYPE *DwmSetIconicLivePreviewBitmap)(HWND, HBITMAP, POINT *, DWORD);
+    typedef HRESULT (STDAPICALLTYPE *DwmInvalidateIconicBitmaps)(HWND);
+
+    QtDwmApiDll()
+        : dwmGetColorizationColor(0), dwmSetWindowAttribute(0), dwmGetWindowAttribute(0)
+        , dwmExtendFrameIntoClientArea(0), dwmEnableBlurBehindWindow(0)
+        , dwmIsCompositionEnabled(0), dwmEnableComposition(0)
+        , dwmSetIconicThumbnail(0), dwmSetIconicLivePreviewBitmap(0), dwmInvalidateIconicBitmaps(0)
+    {}
+
+    void init()
+    {
+        if (!dwmSetWindowAttribute && QSysInfo::windowsVersion() >= QSysInfo::WV_VISTA)
+            resolve();
+    }
+
+    void resolve();
+
     template <class T> static T windowAttribute(HWND hwnd, DWORD attribute, T defaultValue);
     template <class T> static void setWindowAttribute(HWND hwnd, DWORD attribute, T value);
 
@@ -74,7 +135,41 @@ namespace QtDwmApiDll
 
     inline void setBooleanWindowAttribute(HWND hwnd, DWORD attribute, bool value)
         { setWindowAttribute<BOOL>(hwnd, attribute, BOOL(value ? TRUE : FALSE)); }
+
+    DwmGetColorizationColor dwmGetColorizationColor;
+    DwmSetWindowAttribute dwmSetWindowAttribute;
+    DwmGetWindowAttribute dwmGetWindowAttribute;
+    DwmExtendFrameIntoClientArea dwmExtendFrameIntoClientArea;
+    DwmEnableBlurBehindWindow dwmEnableBlurBehindWindow;
+    DwmIsCompositionEnabled dwmIsCompositionEnabled;
+    DwmEnableComposition dwmEnableComposition;
+    DwmSetIconicThumbnail dwmSetIconicThumbnail;
+    DwmSetIconicLivePreviewBitmap dwmSetIconicLivePreviewBitmap;
+    DwmInvalidateIconicBitmaps dwmInvalidateIconicBitmaps;
 };
+
+struct QtShell32Dll
+{
+
+    typedef HRESULT (STDAPICALLTYPE *SHCreateItemFromParsingName)(PCWSTR, IBindCtx *, REFIID, void **);
+    typedef HRESULT (STDAPICALLTYPE *SetCurrentProcessExplicitAppUserModelID)(PCWSTR);
+
+    QtShell32Dll() : sHCreateItemFromParsingName(0), setCurrentProcessExplicitAppUserModelID(0) {}
+
+    void init()
+    {
+        if (!sHCreateItemFromParsingName && QSysInfo::windowsVersion() >= QSysInfo::WV_VISTA)
+            resolve();
+    }
+
+    void resolve();
+
+    SHCreateItemFromParsingName sHCreateItemFromParsingName; // Vista
+    SetCurrentProcessExplicitAppUserModelID setCurrentProcessExplicitAppUserModelID; // Windows 7
+};
+
+extern QtDwmApiDll qtDwmApiDll;
+extern QtShell32Dll qtShell32Dll;
 
 inline void qt_qstringToNullTerminated(const QString &src, wchar_t *dst)
 {
@@ -91,16 +186,19 @@ inline wchar_t *qt_qstringToNullTerminated(const QString &src)
 template <class T>
 T QtDwmApiDll::windowAttribute(HWND hwnd, DWORD attribute, T defaultValue)
 {
-    T value;
-    if (FAILED(DwmGetWindowAttribute(hwnd, attribute, &value, sizeof(value))))
-        value = defaultValue;
+    qtDwmApiDll.init();
+    T value = defaultValue;
+    if (qtDwmApiDll.dwmGetWindowAttribute)
+        qtDwmApiDll.dwmGetWindowAttribute(hwnd, attribute, &value, sizeof(value));
     return value;
 }
 
 template <class T>
 void QtDwmApiDll::setWindowAttribute(HWND hwnd, DWORD attribute, T value)
 {
-    DwmSetWindowAttribute(hwnd, attribute, &value, sizeof(value));
+    qtDwmApiDll.init();
+    if (qtDwmApiDll.dwmSetWindowAttribute)
+        qtDwmApiDll.dwmSetWindowAttribute(hwnd, attribute, &value, sizeof(value));
 }
 
 QT_END_NAMESPACE
