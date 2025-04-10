@@ -55,7 +55,6 @@
 #include <QtCore/qcache.h>
 #include <QtCore/qmutex.h>
 #include <QtGui/private/qopenglcontext_p.h>
-#include <QtGui/private/qshader_p.h>
 
 QT_BEGIN_NAMESPACE
 

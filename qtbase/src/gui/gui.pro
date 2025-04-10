@@ -50,7 +50,6 @@ qtConfig(animation): include(animation/animation.pri)
 include(itemmodels/itemmodels.pri)
 include(vulkan/vulkan.pri)
 include(platform/platform.pri)
-include(rhi/rhi.pri)
 
 QMAKE_LIBS += $$QMAKE_LIBS_GUI
 
