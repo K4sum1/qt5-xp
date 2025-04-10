@@ -308,7 +308,12 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/texture_format_table.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/texture_format_table_autogen.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/VertexArray11.cpp \
-        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/VertexBuffer11.cpp
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/VertexBuffer11.cpp \
+        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.cpp
+
+    !winrt {
+        SOURCES += $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.cpp
+    }
 }
 
 !winrt {
@@ -353,7 +358,6 @@ angle_d3d11 {
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/TextureStorage9.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/VertexBuffer9.cpp \
         $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d9/VertexDeclarationCache.cpp \
-        $$ANGLE_DIR/src/libANGLE/renderer/d3d/d3d11/win32/NativeWindow11Win32.cpp \
         $$ANGLE_DIR/src/third_party/systeminfo/SystemInfo.cpp
 } else {
     HEADERS += \

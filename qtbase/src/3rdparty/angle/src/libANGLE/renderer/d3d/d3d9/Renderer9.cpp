@@ -2490,6 +2490,17 @@ D3DPOOL Renderer9::getBufferPool(DWORD usage) const
     return D3DPOOL_DEFAULT;
 }
 
+const angle::WorkaroundsD3D &RendererD3D::getWorkarounds() const
+{
+    if (!mWorkaroundsInitialized)
+    {
+        mWorkarounds            = generateWorkarounds();
+        mWorkaroundsInitialized = true;
+    }
+
+    return mWorkarounds;
+}
+
 gl::Error Renderer9::copyImage2D(const gl::Context *context,
                                  const gl::Framebuffer *framebuffer,
                                  const gl::Rectangle &sourceRect,

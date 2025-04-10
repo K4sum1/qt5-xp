@@ -38,11 +38,11 @@ DEFINES +=  _WINDOWS \
             NOMINMAX \
             WIN32_LEAN_AND_MEAN=1
 
-CONFIG += angle_d3d11 # Remove to disable D3D11 renderer
+CONFIG += angle_d3d9
 
-angle_d3d11 {
-    DEFINES += ANGLE_ENABLE_D3D11 ANGLE_DEFAULT_D3D11=1
-    !build_pass: message("Enabling D3D11 mode for ANGLE")
+angle_d3d9 {
+    DEFINES += ANGLE_ENABLE_D3D9 ANGLE_DEFAULT_D3D11=0
+    !build_pass: message("Enabling D3D9 mode for ANGLE")
 }
 
 CONFIG(debug, debug|release) {
