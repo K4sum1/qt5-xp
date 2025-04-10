@@ -52,9 +52,9 @@
 //
 
 #include <QtGui/qtguiglobal.h>
+#include <QtGui/qopenglshaderprogram.h>
 #include <QtCore/qcache.h>
 #include <QtCore/qmutex.h>
-#include <QtGui/private/qopenglcontext_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -67,10 +67,10 @@ class QOpenGLProgramBinaryCache
 public:
     struct ShaderDesc {
         ShaderDesc() { }
-        ShaderDesc(QShader::Stage stage, const QByteArray &source = QByteArray())
-          : stage(stage), source(source)
+        ShaderDesc(QOpenGLShader::ShaderType type, const QByteArray &source = QByteArray())
+          : type(type), source(source)
         { }
-        QShader::Stage stage;
+        QOpenGLShader::ShaderType type;
         QByteArray source;
     };
     struct ProgramDesc {
@@ -108,36 +108,6 @@ private:
     bool m_programBinaryOESInitialized = false;
 #endif
     QMutex m_mutex;
-};
-
-// While unlikely, one application can in theory use contexts with different versions
-// or profiles. Therefore any version- or extension-specific checks must be done on a
-// per-context basis, not just once per process. QOpenGLSharedResource enables this,
-// although it's once-per-sharing-context-group, not per-context. Still, this should
-// be good enough in practice.
-class QOpenGLProgramBinarySupportCheck : public QOpenGLSharedResource
-{
-public:
-    QOpenGLProgramBinarySupportCheck(QOpenGLContext *context);
-    void invalidateResource() override { }
-    void freeResource(QOpenGLContext *) override { }
-
-    bool isSupported() const { return m_supported; }
-
-private:
-    bool m_supported;
-};
-
-class QOpenGLProgramBinarySupportCheckWrapper
-{
-public:
-    QOpenGLProgramBinarySupportCheck *get(QOpenGLContext *context)
-    {
-        return m_resource.value<QOpenGLProgramBinarySupportCheck>(context);
-    }
-
-private:
-    QOpenGLMultiGroupSharedResource m_resource;
 };
 
 QT_END_NAMESPACE

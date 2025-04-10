@@ -47,6 +47,7 @@
 #include <QtCore/qvarlengtharray.h>
 #include <QtCore/qvector.h>
 #include <QtCore/qloggingcategory.h>
+#include <QtCore/qcoreapplication.h>
 #include <QtGui/qtransform.h>
 #include <QtGui/QColor>
 #include <QtGui/QSurfaceFormat>
@@ -177,7 +178,7 @@ QT_BEGIN_NAMESPACE
            (requires OpenGL >= 4.3 or OpenGL ES >= 3.1).
 */
 
-Q_DECLARE_LOGGING_CATEGORY(lcOpenGLProgramDiskCache)
+Q_LOGGING_CATEGORY(DBG_SHADER_CACHE, "qt.opengl.diskcache")
 
 // For GLES 3.1/3.2
 #ifndef GL_GEOMETRY_SHADER
@@ -206,6 +207,10 @@ Q_DECLARE_LOGGING_CATEGORY(lcOpenGLProgramDiskCache)
 #endif
 #ifndef GL_PATCH_DEFAULT_INNER_LEVEL
 #define GL_PATCH_DEFAULT_INNER_LEVEL  0x8E73
+#endif
+
+#ifndef GL_NUM_PROGRAM_BINARY_FORMATS
+#define GL_NUM_PROGRAM_BINARY_FORMATS     0x87FE
 #endif
 
 #ifndef QT_OPENGL_ES_2
@@ -1075,44 +1080,6 @@ bool QOpenGLShaderProgram::addCacheableShaderFromSourceCode(QOpenGLShader::Shade
     return addCacheableShaderFromSourceCode(type, QByteArray(source));
 }
 
-static inline QShader::Stage qt_shaderTypeToStage(QOpenGLShader::ShaderType type)
-{
-    switch (type) {
-    case QOpenGLShader::Vertex:
-        return QShader::VertexStage;
-    case QOpenGLShader::Fragment:
-        return QShader::FragmentStage;
-    case QOpenGLShader::Geometry:
-        return QShader::GeometryStage;
-    case QOpenGLShader::TessellationControl:
-        return QShader::TessellationControlStage;
-    case QOpenGLShader::TessellationEvaluation:
-        return QShader::TessellationEvaluationStage;
-    case QOpenGLShader::Compute:
-        return QShader::ComputeStage;
-    }
-    return QShader::VertexStage;
-}
-
-static inline QOpenGLShader::ShaderType qt_shaderStageToType(QShader::Stage stage)
-{
-    switch (stage) {
-    case QShader::VertexStage:
-        return QOpenGLShader::Vertex;
-    case QShader::TessellationControlStage:
-        return QOpenGLShader::TessellationControl;
-    case QShader::TessellationEvaluationStage:
-        return QOpenGLShader::TessellationEvaluation;
-    case QShader::GeometryStage:
-        return QOpenGLShader::Geometry;
-    case QShader::FragmentStage:
-        return QOpenGLShader::Fragment;
-    case QShader::ComputeStage:
-        return QOpenGLShader::Compute;
-    }
-    return QOpenGLShader::Vertex;
-}
-
 /*!
     \overload
 
@@ -1141,7 +1108,7 @@ bool QOpenGLShaderProgram::addCacheableShaderFromSourceCode(QOpenGLShader::Shade
     if (d->isCacheDisabled())
         return addShaderFromSourceCode(type, source);
 
-    d->binaryProgram.shaders.append(QOpenGLProgramBinaryCache::ShaderDesc(qt_shaderTypeToStage(type), source));
+    d->binaryProgram.shaders.append(QOpenGLProgramBinaryCache::ShaderDesc(type, source));
     return true;
 }
 
@@ -1198,7 +1165,7 @@ bool QOpenGLShaderProgram::addCacheableShaderFromSourceFile(QOpenGLShader::Shade
     if (d->isCacheDisabled())
         return addShaderFromSourceFile(type, fileName);
 
-    QOpenGLProgramBinaryCache::ShaderDesc shader(qt_shaderTypeToStage(type));
+    QOpenGLProgramBinaryCache::ShaderDesc shader(type);
     // NB! It could be tempting to defer reading the file contents and just
     // hash the filename as the cache key, perhaps combined with last-modified
     // timestamp checks. However, this would raise a number of issues (no
@@ -3752,6 +3719,77 @@ bool QOpenGLShader::hasOpenGLShaders(ShaderType type, QOpenGLContext *context)
     return true;
 }
 
+// While unlikely, one application can in theory use contexts with different versions
+// or profiles. Therefore any version- or extension-specific checks must be done on a
+// per-context basis, not just once per process. QOpenGLSharedResource enables this,
+// although it's once-per-sharing-context-group, not per-context. Still, this should
+// be good enough in practice.
+class QOpenGLProgramBinarySupportCheck : public QOpenGLSharedResource
+{
+public:
+    QOpenGLProgramBinarySupportCheck(QOpenGLContext *context);
+    void invalidateResource() override { }
+    void freeResource(QOpenGLContext *) override { }
+
+    bool isSupported() const { return m_supported; }
+
+private:
+    bool m_supported;
+};
+
+QOpenGLProgramBinarySupportCheck::QOpenGLProgramBinarySupportCheck(QOpenGLContext *context)
+    : QOpenGLSharedResource(context->shareGroup()),
+      m_supported(false)
+{
+    if (QCoreApplication::testAttribute(Qt::AA_DisableShaderDiskCache)) {
+        qCDebug(DBG_SHADER_CACHE, "Shader cache disabled via app attribute");
+        return;
+    }
+    if (qEnvironmentVariableIntValue("QT_DISABLE_SHADER_DISK_CACHE")) {
+        qCDebug(DBG_SHADER_CACHE, "Shader cache disabled via env var");
+        return;
+    }
+
+    QOpenGLContext *ctx = QOpenGLContext::currentContext();
+    if (ctx) {
+        if (ctx->isOpenGLES()) {
+            qCDebug(DBG_SHADER_CACHE, "OpenGL ES v%d context", ctx->format().majorVersion());
+            if (ctx->format().majorVersion() >= 3) {
+                m_supported = true;
+            } else {
+                const bool hasExt = ctx->hasExtension("GL_OES_get_program_binary");
+                qCDebug(DBG_SHADER_CACHE, "GL_OES_get_program_binary support = %d", hasExt);
+                if (hasExt)
+                    m_supported = true;
+            }
+        } else {
+            const bool hasExt = ctx->hasExtension("GL_ARB_get_program_binary");
+            qCDebug(DBG_SHADER_CACHE, "GL_ARB_get_program_binary support = %d", hasExt);
+            if (hasExt)
+                m_supported = true;
+        }
+        if (m_supported) {
+            GLint fmtCount = 0;
+            ctx->functions()->glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &fmtCount);
+            qCDebug(DBG_SHADER_CACHE, "Supported binary format count = %d", fmtCount);
+            m_supported = fmtCount > 0;
+        }
+    }
+    qCDebug(DBG_SHADER_CACHE, "Shader cache supported = %d", m_supported);
+}
+
+class QOpenGLProgramBinarySupportCheckWrapper
+{
+public:
+    QOpenGLProgramBinarySupportCheck *get(QOpenGLContext *context)
+    {
+        return m_resource.value<QOpenGLProgramBinarySupportCheck>(context);
+    }
+
+private:
+    QOpenGLMultiGroupSharedResource m_resource;
+};
+
 bool QOpenGLShaderProgramPrivate::isCacheDisabled() const
 {
     static QOpenGLProgramBinarySupportCheckWrapper binSupportCheck;
@@ -3762,7 +3800,7 @@ bool QOpenGLShaderProgramPrivate::compileCacheable()
 {
     Q_Q(QOpenGLShaderProgram);
     for (const QOpenGLProgramBinaryCache::ShaderDesc &shader : qAsConst(binaryProgram.shaders)) {
-        QScopedPointer<QOpenGLShader> s(new QOpenGLShader(qt_shaderStageToType(shader.stage), q));
+        QScopedPointer<QOpenGLShader> s(new QOpenGLShader(shader.type, q));
         if (!s->compileSourceCode(shader.source)) {
             log = s->log();
             return false;
@@ -3781,19 +3819,19 @@ bool QOpenGLShaderProgramPrivate::linkBinary()
     Q_Q(QOpenGLShaderProgram);
 
     const QByteArray cacheKey = binaryProgram.cacheKey();
-    if (lcOpenGLProgramDiskCache().isEnabled(QtDebugMsg))
-        qCDebug(lcOpenGLProgramDiskCache, "program with %d shaders, cache key %s",
+    if (DBG_SHADER_CACHE().isEnabled(QtDebugMsg))
+        qCDebug(DBG_SHADER_CACHE, "program with %d shaders, cache key %s",
                 binaryProgram.shaders.count(), cacheKey.constData());
 
     bool needsCompile = true;
     if (binCache.load(cacheKey, q->programId())) {
-        qCDebug(lcOpenGLProgramDiskCache, "Program binary received from cache");
+        qCDebug(DBG_SHADER_CACHE, "Program binary received from cache");
         needsCompile = false;
     }
 
     bool needsSave = false;
     if (needsCompile) {
-        qCDebug(lcOpenGLProgramDiskCache, "Program binary not in cache, compiling");
+        qCDebug(DBG_SHADER_CACHE, "Program binary not in cache, compiling");
         if (compileCacheable())
             needsSave = true;
         else
