@@ -186,10 +186,18 @@ static IDXGIFactory1 *createDXGIFactory2()
 static IDXGIFactory1 *createDXGIFactory1()
 {
     IDXGIFactory1 *result = nullptr;
-    const HRESULT hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void **>(&result));
-    if (FAILED(hr)) {
-        qWarning("CreateDXGIFactory1() failed to create DXGI factory: %s", qPrintable(comErrorMessage(hr)));
-        result = nullptr;
+    if (QOperatingSystemVersion::current() > QOperatingSystemVersion::WindowsXP) {
+        using PtrCreateDXGIFactory1 = HRESULT (WINAPI *)(REFIID, void **);
+        QSystemLibrary dxgilib(QStringLiteral("dxgi"));
+        if (auto createDXGIFactory1 = reinterpret_cast<PtrCreateDXGIFactory1>(dxgilib.resolve("CreateDXGIFactory1"))) {
+            const HRESULT hr = createDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void **>(&result));
+            if (FAILED(hr)) {
+                qWarning("CreateDXGIFactory1() failed to create DXGI factory: %s", qPrintable(comErrorMessage(hr)));
+                result = nullptr;
+            }
+        } else {
+            qWarning("Unable to resolve CreateDXGIFactory1()");
+        }
     }
     return result;
 }
@@ -261,13 +269,22 @@ bool QRhiD3D11::create(QRhi::Flags flags)
         }
 
         ID3D11DeviceContext *ctx = nullptr;
-        HRESULT hr = D3D11CreateDevice(adapterToUse, D3D_DRIVER_TYPE_UNKNOWN, nullptr, devFlags,
-                                       nullptr, 0, D3D11_SDK_VERSION,
-                                       &dev, &featureLevel, &ctx);
-        adapterToUse->Release();
-        if (FAILED(hr)) {
-            qWarning("Failed to create D3D11 device and context: %s", qPrintable(comErrorMessage(hr)));
-            return false;
+        if (QOperatingSystemVersion::current() > QOperatingSystemVersion::WindowsXP) {
+            using PtrD3D11CreateDevice = HRESULT (WINAPI *)(IDXGIAdapter *, D3D_DRIVER_TYPE, HMODULE, UINT, const D3D_FEATURE_LEVEL *, UINT, UINT, ID3D11Device **, D3D_FEATURE_LEVEL *, ID3D11DeviceContext **);
+            QSystemLibrary d3d11lib(QStringLiteral("d3d11"));
+            if (auto d3d11CreateDevice = reinterpret_cast<PtrD3D11CreateDevice>(d3d11lib.resolve("D3D11CreateDevice"))) {
+                HRESULT hr = d3d11CreateDevice(adapterToUse, D3D_DRIVER_TYPE_UNKNOWN, nullptr, devFlags,
+                                               nullptr, 0, D3D11_SDK_VERSION,
+                                               &dev, &featureLevel, &ctx);
+                adapterToUse->Release();
+                if (FAILED(hr)) {
+                    qWarning("Failed to create D3D11 device and context: %s", qPrintable(comErrorMessage(hr)));
+                    return false;
+                }
+            } else {
+                qWarning("ID3D11DeviceContext1 not supported");
+                return false;
+            }
         }
         if (SUCCEEDED(ctx->QueryInterface(__uuidof(ID3D11DeviceContext1), reinterpret_cast<void **>(&context)))) {
             ctx->Release();
