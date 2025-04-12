@@ -38,17 +38,6 @@
  **
  ****************************************************************************/
 
-#include <QtCore/qglobal.h>
-
-#ifdef Q_CC_MINGW // MinGW: Enable SHCreateItemFromParsingName()
-#  if defined(_WIN32_IE) && _WIN32_IE < 0x0700 // _WIN32_IE_IE70
-#     undef _WIN32_IE
-#  endif
-#  ifndef _WIN32_IE
-#    define _WIN32_IE 0x0700
-#  endif
-#endif // Q_CC_MINGW
-
 #include "qwinjumplist.h"
 #include "qwinjumplist_p.h"
 #include "qwinjumplistitem.h"
@@ -67,8 +56,6 @@
 #include "qwinfunctions.h"
 #include "qwinfunctions_p.h"
 #include "winpropkey_p.h"
-
-#include <shobjidl.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -398,8 +385,11 @@ IShellLinkW *QWinJumpListPrivate::toIShellLink(const QWinJumpListItem *item)
 IShellItem2 *QWinJumpListPrivate::toIShellItem(const QWinJumpListItem *item)
 {
     IShellItem2 *shellitem = nullptr;
-    QScopedArrayPointer<wchar_t> buffer(qt_qstringToNullTerminated(item->filePath()));
-    SHCreateItemFromParsingName(buffer.data(), nullptr, qIID_IShellItem2, reinterpret_cast<void **>(&shellitem));
+    qtShell32Dll.init();
+    if (qtShell32Dll.sHCreateItemFromParsingName) {
+        QScopedArrayPointer<wchar_t> buffer(qt_qstringToNullTerminated(item->filePath()));
+        qtShell32Dll.sHCreateItemFromParsingName(buffer.data(), 0, qIID_IShellItem2, reinterpret_cast<void **>(&shellitem));
+    }
     return shellitem;
 }
 

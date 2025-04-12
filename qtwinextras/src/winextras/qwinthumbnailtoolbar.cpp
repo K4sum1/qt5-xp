@@ -38,13 +38,6 @@
  **
  ****************************************************************************/
 
-#if defined(_WIN32_WINNT) && _WIN32_WINNT < 0x0601
-#  undef _WIN32_WINNT
-#endif
-#if !defined(_WIN32_WINNT)
-#  define _WIN32_WINNT 0x0601 // Enable functions for MinGW
-#endif
-
 #include "qwinthumbnailtoolbar.h"
 #include "qwinthumbnailtoolbar_p.h"
 #include "qwinthumbnailtoolbutton.h"
@@ -233,15 +226,18 @@ int QWinThumbnailToolBar::count() const
 void QWinThumbnailToolBarPrivate::updateIconicPixmapsEnabled(bool invalidate)
 {
     Q_Q(QWinThumbnailToolBar);
+    qtDwmApiDll.init();
     const HWND hwnd = handle();
     if (!hwnd) {
          qWarning() << Q_FUNC_INFO << "invoked with hwnd=0";
          return;
     }
+    if (!qtDwmApiDll.dwmInvalidateIconicBitmaps)
+        return;
     const bool enabled = iconicThumbnail || iconicLivePreview;
     q->setIconicPixmapNotificationsEnabled(enabled);
     if (enabled && invalidate) {
-        const HRESULT hr = DwmInvalidateIconicBitmaps(hwnd);
+        const HRESULT hr = qtDwmApiDll.dwmInvalidateIconicBitmaps(hwnd);
         if (FAILED(hr))
             qWarning() << QWinThumbnailToolBarPrivate::msgComFailed("DwmInvalidateIconicBitmaps", hr);
     }
@@ -323,9 +319,11 @@ bool QWinThumbnailToolBar::iconicPixmapNotificationsEnabled() const
 {
     Q_D(const QWinThumbnailToolBar);
     const HWND hwnd = d->handle();
-    if (!hwnd)
+    if (!hwnd || !qtDwmApiDll.dwmGetWindowAttribute)
         return false;
-    return QtDwmApiDll::booleanWindowAttribute(hwnd, dWMWA_FORCE_ICONIC_REPRESENTATION);
+    qtDwmApiDll.init();
+    return qtDwmApiDll.dwmGetWindowAttribute && hwnd
+        && QtDwmApiDll::booleanWindowAttribute(hwnd, dWMWA_FORCE_ICONIC_REPRESENTATION);
 }
 
 void QWinThumbnailToolBar::setIconicPixmapNotificationsEnabled(bool enabled)
@@ -336,7 +334,8 @@ void QWinThumbnailToolBar::setIconicPixmapNotificationsEnabled(bool enabled)
         qWarning() << Q_FUNC_INFO << "invoked with hwnd=0";
         return;
     }
-    if (iconicPixmapNotificationsEnabled() == enabled)
+    qtDwmApiDll.init();
+    if (!qtDwmApiDll.dwmSetWindowAttribute || iconicPixmapNotificationsEnabled() == enabled)
         return;
     QtDwmApiDll::setBooleanWindowAttribute(hwnd, dWMWA_FORCE_ICONIC_REPRESENTATION, enabled);
     QtDwmApiDll::setBooleanWindowAttribute(hwnd, dWMWA_HAS_ICONIC_BITMAP, enabled);
@@ -387,11 +386,12 @@ QPixmap QWinThumbnailToolBar::iconicLivePreviewPixmap() const
 
 inline void QWinThumbnailToolBarPrivate::updateIconicThumbnail(const MSG *message)
 {
-    if (!iconicThumbnail)
+    qtDwmApiDll.init();
+    if (!qtDwmApiDll.dwmSetIconicThumbnail || !iconicThumbnail)
         return;
     const QSize maxSize(HIWORD(message->lParam), LOWORD(message->lParam));
     if (const HBITMAP bitmap = iconicThumbnail.bitmap(maxSize)) {
-        const HRESULT hr = DwmSetIconicThumbnail(message->hwnd, bitmap, dWM_SIT_DISPLAYFRAME);
+        const HRESULT hr = qtDwmApiDll.dwmSetIconicThumbnail(message->hwnd, bitmap, dWM_SIT_DISPLAYFRAME);
         if (FAILED(hr))
             qWarning() << QWinThumbnailToolBarPrivate::msgComFailed("DwmSetIconicThumbnail", hr);
     }
@@ -399,14 +399,15 @@ inline void QWinThumbnailToolBarPrivate::updateIconicThumbnail(const MSG *messag
 
 inline void QWinThumbnailToolBarPrivate::updateIconicLivePreview(const MSG *message)
 {
-    if (!iconicLivePreview)
+    qtDwmApiDll.init();
+    if (!qtDwmApiDll.dwmSetIconicLivePreviewBitmap || !iconicLivePreview)
         return;
     RECT rect;
     GetClientRect(message->hwnd, &rect);
     const QSize maxSize(rect.right, rect.bottom);
     POINT offset = {0, 0};
     if (const HBITMAP bitmap = iconicLivePreview.bitmap(maxSize)) {
-        const HRESULT hr = DwmSetIconicLivePreviewBitmap(message->hwnd, bitmap, &offset, dWM_SIT_DISPLAYFRAME);
+        const HRESULT hr = qtDwmApiDll.dwmSetIconicLivePreviewBitmap(message->hwnd, bitmap, &offset, dWM_SIT_DISPLAYFRAME);
         if (FAILED(hr))
             qWarning() << QWinThumbnailToolBarPrivate::msgComFailed("DwmSetIconicLivePreviewBitmap", hr);
     }
