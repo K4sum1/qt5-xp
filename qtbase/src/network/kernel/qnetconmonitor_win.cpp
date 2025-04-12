@@ -302,26 +302,25 @@ bool QNetworkConnectionEvents::setTarget(const QNetworkInterface &iface)
             qCWarning(lcNetMon, "Could not get the LUID for the interface.");
             return false;
         }
-    }
-    resolveLibs();
-    if (ptrConvertInterfaceIndexToLuid && ptrConvertInterfaceLuidToGuid) {
         GUID guid;
         if (ptrConvertInterfaceLuidToGuid(&luid, &guid) != NO_ERROR) {
             qCWarning(lcNetMon, "Could not get the GUID for the interface.");
             return false;
         }
-    }
-    ComPtr<INetworkConnection> connection = getNetworkConnectionFromAdapterGuid(guid);
-    if (!connection) {
-        qCWarning(lcNetMon, "Could not get the INetworkConnection instance for the adapter GUID.");
+        ComPtr<INetworkConnection> connection = getNetworkConnectionFromAdapterGuid(guid);
+        if (!connection) {
+            qCWarning(lcNetMon, "Could not get the INetworkConnection instance for the adapter GUID.");
+            return false;
+        }
+        auto hr = connection->GetConnectionId(&guid);
+        if (FAILED(hr)) {
+            qCWarning(lcNetMon) << "Failed to get the connection's GUID:" << errorStringFromHResult(hr);
+            return false;
+        }
+        currentConnectionId = guid;
+    } else { 
         return false;
     }
-    auto hr = connection->GetConnectionId(&guid);
-    if (FAILED(hr)) {
-        qCWarning(lcNetMon) << "Failed to get the connection's GUID:" << errorStringFromHResult(hr);
-        return false;
-    }
-    currentConnectionId = guid;
 
     return true;
 }
