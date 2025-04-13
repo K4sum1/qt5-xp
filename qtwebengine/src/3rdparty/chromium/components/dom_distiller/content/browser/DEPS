@@ -1,6 +1,0 @@
-include_rules = [
-  "+mojo/public",
-  "+services/network/public/mojom",
-  "+services/service_manager/public/cpp",
-  "+ui/display",
-]

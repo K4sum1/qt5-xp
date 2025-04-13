@@ -1,3 +1,0 @@
-# All APIs that have their externs generated.
-# TODO(rdevlin.cronin): Add more!
-arc_apps_private.idl

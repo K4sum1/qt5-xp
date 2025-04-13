@@ -1,5 +1,0 @@
-include_rules = [
-  "+components/feedback",
-  "+net",
-  "+services/network",
-]
