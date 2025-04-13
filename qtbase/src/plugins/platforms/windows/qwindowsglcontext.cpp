@@ -43,6 +43,7 @@
 #include "qwindowsintegration.h"
 
 #include <QtCore/qdebug.h>
+#include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/qsysinfo.h>
 #include <QtGui/qguiapplication.h>
 #include <qpa/qplatformnativeinterface.h>
@@ -388,7 +389,9 @@ static PIXELFORMATDESCRIPTOR
     initPixelFormatDescriptor(&pfd);
     pfd.iPixelType = PFD_TYPE_RGBA;
     pfd.iLayerType  = PFD_MAIN_PLANE;
-    pfd.dwFlags = PFD_SUPPORT_OPENGL | PFD_SUPPORT_COMPOSITION;
+    pfd.dwFlags = PFD_SUPPORT_OPENGL;
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsVista)
+        pfd.dwFlags = PFD_SUPPORT_COMPOSITION;
     const bool isPixmap = (additional.formatFlags & QWindowsGLRenderToPixmap) != 0;
     pfd.dwFlags |= isPixmap ? PFD_DRAW_TO_BITMAP : PFD_DRAW_TO_WINDOW;
     if (!(additional.formatFlags & QWindowsGLDirectRendering))

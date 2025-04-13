@@ -52,6 +52,7 @@
 #include <QtGui/qcursor.h>
 
 #include <QtCore/qdebug.h>
+#include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/qscopedpointer.h>
 
 #include <windowsx.h>
@@ -120,6 +121,8 @@ static inline void compressMouseMove(MSG *msg)
 static inline QTouchDevice *createTouchDevice()
 {
     const int digitizers = GetSystemMetrics(SM_DIGITIZER);
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion::Windows7)
+        return nullptr;
     if (!(digitizers & (NID_INTEGRATED_TOUCH | NID_EXTERNAL_TOUCH)))
         return nullptr;
     const int tabletPc = GetSystemMetrics(SM_TABLETPC);

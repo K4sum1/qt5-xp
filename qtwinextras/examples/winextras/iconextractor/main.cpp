@@ -56,6 +56,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+#include <QOperatingSystemVersion>
 #include <QPixmap>
 #include <QScopedArrayPointer>
 #include <QStringList>

@@ -61,6 +61,7 @@
 #include <QtCore/qscopedpointer.h>
 #include <QtCore/qsharedpointer.h>
 #include <QtCore/qobject.h>
+#include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/qthread.h>
 #include <QtCore/qsysinfo.h>
 #include <QtCore/qshareddata.h>
@@ -594,8 +595,8 @@ QString QWindowsShellItem::path() const
 {
     if (isFileSystem())
         return QDir::cleanPath(QWindowsShellItem::displayName(m_item, SIGDN_FILESYSPATH));
-    // Check for a "Library" item
-    if (isDir())
+    // Check for a "Library" item (Windows 7)
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows7 && isDir())
         return QWindowsShellItem::libraryItemDefaultSaveFolder(m_item);
     return QString();
 }
@@ -2117,7 +2118,7 @@ bool useHelper(QPlatformTheme::DialogType type)
         return false;
     switch (type) {
     case QPlatformTheme::FileDialog:
-        return true;
+        return QOperatingSystemVersion::current() >= QOperatingSystemVersion::WindowsXP;
     case QPlatformTheme::ColorDialog:
 #ifdef USE_NATIVE_COLOR_DIALOG
         return true;
@@ -2139,9 +2140,12 @@ QPlatformDialogHelper *createHelper(QPlatformTheme::DialogType type)
         return nullptr;
     switch (type) {
     case QPlatformTheme::FileDialog:
-        if (QWindowsIntegration::instance()->options() & QWindowsIntegration::XpNativeDialogs)
+        if (QWindowsIntegration::instance()->options() & QWindowsIntegration::XpNativeDialogs
+            || QOperatingSystemVersion::current() <= QOperatingSystemVersion::WindowsXP) {
             return new QWindowsXpFileDialogHelper();
-        return new QWindowsFileDialogHelper;
+        }
+        if (QOperatingSystemVersion::current() > QOperatingSystemVersion::WindowsXP)
+            return new QWindowsFileDialogHelper();
     case QPlatformTheme::ColorDialog:
 #ifdef USE_NATIVE_COLOR_DIALOG
         return new QWindowsColorDialogHelper();
