@@ -82,11 +82,7 @@ void NativeMutexUnlock(NativeMutexType *mutex)
 typedef CRITICAL_SECTION NativeMutexType;
 void NativeMutexInitialize(NativeMutexType *mutex)
 {
-#ifndef Q_OS_WINRT
     InitializeCriticalSection(mutex);
-#else
-    InitializeCriticalSectionEx(mutex, 0, 0);
-#endif
 }
 void NativeMutexDestroy(NativeMutexType *mutex)
 {
