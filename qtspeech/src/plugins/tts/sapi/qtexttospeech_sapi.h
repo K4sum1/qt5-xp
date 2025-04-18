@@ -34,6 +34,8 @@
 **
 ****************************************************************************/
 
+#define _ATL_XP_TARGETING
+
 #ifndef QTEXTTOSPEECHENGINE_SAPI_H
 #define QTEXTTOSPEECHENGINE_SAPI_H
 
